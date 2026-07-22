@@ -3,38 +3,38 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { Conversation } from "@/lib/types";
 
-export function conversationsQueryKey(userId: string | undefined, contactId: string | undefined) {
-  return ["conversations", userId, contactId] as const;
+export function conversationsQueryKey(companyId: string | undefined, contactId: string | undefined) {
+  return ["conversations", companyId, contactId] as const;
 }
 
-export function lastMessagesQueryKey(userId: string | undefined) {
-  return ["last-messages", userId] as const;
+export function lastMessagesQueryKey(companyId: string | undefined) {
+  return ["last-messages", companyId] as const;
 }
 
 // Mensagens de um contato específico, com assinatura realtime para o chat.
-export function useConversationsQuery(userId: string | undefined, contactId: string | undefined) {
+export function useConversationsQuery(companyId: string | undefined, contactId: string | undefined) {
   const queryClient = useQueryClient();
 
   const query = useQuery({
-    queryKey: conversationsQueryKey(userId, contactId),
+    queryKey: conversationsQueryKey(companyId, contactId),
     queryFn: async () => {
-      if (!userId || !contactId) return [];
+      if (!companyId || !contactId) return [];
       const { data, error } = await supabase
         .from("conversations")
         .select("*")
-        .eq("user_id", userId)
+        .eq("company_id", companyId)
         .eq("contact_id", contactId)
         .order("created_at", { ascending: true })
         .limit(500);
       if (error) throw error;
       return (data ?? []) as Conversation[];
     },
-    enabled: !!userId && !!contactId,
+    enabled: !!companyId && !!contactId,
     staleTime: 10_000,
   });
 
   useEffect(() => {
-    if (!userId || !contactId) return;
+    if (!companyId || !contactId) return;
 
     const channel = supabase
       .channel(`conversations-${contactId}`)
@@ -44,14 +44,14 @@ export function useConversationsQuery(userId: string | undefined, contactId: str
         (payload) => {
           const message = payload.new as Conversation;
           queryClient.setQueryData<Conversation[]>(
-            conversationsQueryKey(userId, contactId),
+            conversationsQueryKey(companyId, contactId),
             (prev) => {
               if (!prev) return [message];
               if (prev.some((m) => m.id === message.id)) return prev;
               return [...prev, message];
             },
           );
-          void queryClient.invalidateQueries({ queryKey: lastMessagesQueryKey(userId) });
+          void queryClient.invalidateQueries({ queryKey: lastMessagesQueryKey(companyId) });
         },
       )
       .subscribe();
@@ -59,21 +59,21 @@ export function useConversationsQuery(userId: string | undefined, contactId: str
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [userId, contactId, queryClient]);
+  }, [companyId, contactId, queryClient]);
 
   return query;
 }
 
 // Última mensagem por contato — para a lista de conversas mostrar prévia/hora.
-export function useLastMessagesQuery(userId: string | undefined) {
+export function useLastMessagesQuery(companyId: string | undefined) {
   return useQuery({
-    queryKey: lastMessagesQueryKey(userId),
+    queryKey: lastMessagesQueryKey(companyId),
     queryFn: async () => {
-      if (!userId) return new Map<string, Conversation>();
+      if (!companyId) return new Map<string, Conversation>();
       const { data, error } = await supabase
         .from("conversations")
         .select("*")
-        .eq("user_id", userId)
+        .eq("company_id", companyId)
         .order("created_at", { ascending: false })
         .limit(1000);
       if (error) throw error;
@@ -83,7 +83,7 @@ export function useLastMessagesQuery(userId: string | undefined) {
       }
       return byContact;
     },
-    enabled: !!userId,
+    enabled: !!companyId,
     staleTime: 15_000,
   });
 }

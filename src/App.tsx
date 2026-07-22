@@ -11,6 +11,8 @@ import Contacts from "@/pages/Contacts";
 import Chat from "@/pages/Chat";
 import Tasks from "@/pages/Tasks";
 import Settings from "@/pages/Settings";
+import SdrIa from "@/pages/SdrIa";
+import Companies from "@/pages/Companies";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -51,6 +53,8 @@ export default function App() {
               <Route path="/contatos" element={<Contacts />} />
               <Route path="/chat" element={<Chat />} />
               <Route path="/tarefas" element={<Tasks />} />
+              <Route path="/sdr" element={<SdrIa />} />
+              <Route path="/empresas" element={<Companies />} />
               <Route path="/configuracoes" element={<Settings />} />
             </Route>
           </Routes>

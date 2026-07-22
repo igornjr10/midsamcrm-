@@ -17,8 +17,8 @@ function generateVerifyToken(): string {
 }
 
 export default function Settings() {
-  const { user } = useAuth();
-  const { data: config, isPending } = useWhatsappConfigQuery(user?.id);
+  const { user, company } = useAuth();
+  const { data: config, isPending } = useWhatsappConfigQuery(company?.id);
   const saveConfig = useSaveWhatsappConfigMutation();
 
   const [phoneNumberId, setPhoneNumberId] = useState("");
@@ -46,7 +46,7 @@ export default function Settings() {
   };
 
   const handleSave = async () => {
-    if (!user) return;
+    if (!user || !company) return;
     if (!phoneNumberId.trim() || !wabaId.trim() || !accessToken.trim()) {
       toast.error("Preencha Phone Number ID, WABA ID e Access Token.");
       return;
@@ -54,6 +54,7 @@ export default function Settings() {
     try {
       await saveConfig.mutateAsync({
         user_id: user.id,
+        company_id: company.id,
         phone_number_id: phoneNumberId.trim(),
         waba_id: wabaId.trim(),
         access_token: accessToken.trim(),

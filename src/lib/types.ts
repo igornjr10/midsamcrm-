@@ -6,6 +6,7 @@
 export interface Contact {
   id: string;
   user_id: string;
+  company_id: string;
   name: string;
   phone: string | null;
   normalized_phone: string | null;
@@ -13,6 +14,7 @@ export interface Contact {
   stage: string;
   loss_reason: string | null;
   notes: string | null;
+  ai_paused: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -20,8 +22,9 @@ export interface Contact {
 export interface Conversation {
   id: string;
   user_id: string;
+  company_id: string;
   contact_id: string;
-  sender: "user" | "contact";
+  sender: "user" | "contact" | "ai";
   content: string;
   channel: string;
   message_ref: string | null;
@@ -32,6 +35,7 @@ export interface Conversation {
 export interface Task {
   id: string;
   user_id: string;
+  company_id: string;
   contact_id: string | null;
   title: string;
   description: string | null;
@@ -44,6 +48,7 @@ export interface Task {
 export interface WhatsappConfig {
   id: string;
   user_id: string;
+  company_id: string;
   phone_number_id: string;
   waba_id: string;
   access_token: string;
@@ -53,6 +58,24 @@ export interface WhatsappConfig {
   label: string | null;
   phone_number: string | null;
   api_base_url: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AiConfig {
+  id: string;
+  company_id: string;
+  enabled: boolean;
+  system_prompt: string | null;
+  model: string;
+  openai_api_key: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Company {
+  id: string;
+  name: string;
   created_at: string;
   updated_at: string;
 }

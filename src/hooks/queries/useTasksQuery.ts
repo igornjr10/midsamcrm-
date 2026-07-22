@@ -2,24 +2,24 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { Task } from "@/lib/types";
 
-export function tasksQueryKey(userId: string | undefined) {
-  return ["tasks", userId] as const;
+export function tasksQueryKey(companyId: string | undefined) {
+  return ["tasks", companyId] as const;
 }
 
-export function useTasksQuery(userId: string | undefined) {
+export function useTasksQuery(companyId: string | undefined) {
   return useQuery({
-    queryKey: tasksQueryKey(userId),
+    queryKey: tasksQueryKey(companyId),
     queryFn: async () => {
-      if (!userId) return [];
+      if (!companyId) return [];
       const { data, error } = await supabase
         .from("tasks")
         .select("*")
-        .eq("user_id", userId)
+        .eq("company_id", companyId)
         .order("due_at", { ascending: true, nullsFirst: false });
       if (error) throw error;
       return (data ?? []) as Task[];
     },
-    enabled: !!userId,
+    enabled: !!companyId,
     staleTime: 30_000,
   });
 }
@@ -29,6 +29,7 @@ export function useCreateTaskMutation() {
   return useMutation({
     mutationFn: async (payload: {
       user_id: string;
+      company_id: string;
       title: string;
       description?: string | null;
       due_at?: string | null;
@@ -38,7 +39,7 @@ export function useCreateTaskMutation() {
       if (error) throw error;
     },
     onSuccess: (_, payload) => {
-      void queryClient.invalidateQueries({ queryKey: tasksQueryKey(payload.user_id) });
+      void queryClient.invalidateQueries({ queryKey: tasksQueryKey(payload.company_id) });
     },
   });
 }
@@ -46,16 +47,16 @@ export function useCreateTaskMutation() {
 export function useUpdateTaskMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, user_id, ...patch }: { id: string; user_id: string } & Partial<Task>) => {
+    mutationFn: async ({ id, company_id, ...patch }: { id: string; company_id: string } & Partial<Task>) => {
       const { error } = await supabase
         .from("tasks")
         .update(patch)
         .eq("id", id)
-        .eq("user_id", user_id);
+        .eq("company_id", company_id);
       if (error) throw error;
     },
-    onSuccess: (_, { user_id }) => {
-      void queryClient.invalidateQueries({ queryKey: tasksQueryKey(user_id) });
+    onSuccess: (_, { company_id }) => {
+      void queryClient.invalidateQueries({ queryKey: tasksQueryKey(company_id) });
     },
   });
 }
@@ -63,12 +64,12 @@ export function useUpdateTaskMutation() {
 export function useDeleteTaskMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, user_id }: { id: string; user_id: string }) => {
-      const { error } = await supabase.from("tasks").delete().eq("id", id).eq("user_id", user_id);
+    mutationFn: async ({ id, company_id }: { id: string; company_id: string }) => {
+      const { error } = await supabase.from("tasks").delete().eq("id", id).eq("company_id", company_id);
       if (error) throw error;
     },
-    onSuccess: (_, { user_id }) => {
-      void queryClient.invalidateQueries({ queryKey: tasksQueryKey(user_id) });
+    onSuccess: (_, { company_id }) => {
+      void queryClient.invalidateQueries({ queryKey: tasksQueryKey(company_id) });
     },
   });
 }

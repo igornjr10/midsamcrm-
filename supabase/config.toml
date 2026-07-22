@@ -413,3 +413,6 @@ verify_jwt = false
 
 [functions.whatsapp-send]
 verify_jwt = false
+
+[functions.admin-create-company]
+verify_jwt = false

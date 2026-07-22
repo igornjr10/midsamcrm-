@@ -20,7 +20,7 @@ interface ContactDetailModalProps {
 }
 
 export default function ContactDetailModal({ contact, open, onClose }: ContactDetailModalProps) {
-  const { user } = useAuth();
+  const { user, company } = useAuth();
   const navigate = useNavigate();
   const updateContact = useUpdateContactMutation();
   const deleteContact = useDeleteContactMutation();
@@ -45,13 +45,13 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
     setTaskDueAt("");
   }, [contact]);
 
-  if (!contact || !user) return null;
+  if (!contact || !user || !company) return null;
 
   const handleSave = async () => {
     try {
       await updateContact.mutateAsync({
         id: contact.id,
-        user_id: user.id,
+        company_id: company.id,
         name: name.trim() || contact.name,
         phone: phone.trim() || null,
         email: email.trim() || null,
@@ -68,7 +68,7 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
   const handleDelete = async () => {
     if (!window.confirm(`Excluir o contato "${contact.name}"? As mensagens e tarefas vinculadas também serão afetadas.`)) return;
     try {
-      await deleteContact.mutateAsync({ id: contact.id, user_id: user.id });
+      await deleteContact.mutateAsync({ id: contact.id, company_id: company.id });
       toast.success("Contato excluído");
       onClose();
     } catch (err) {
@@ -81,6 +81,7 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
     try {
       await createTask.mutateAsync({
         user_id: user.id,
+        company_id: company.id,
         title: taskTitle.trim(),
         due_at: taskDueAt ? new Date(taskDueAt).toISOString() : null,
         contact_id: contact.id,

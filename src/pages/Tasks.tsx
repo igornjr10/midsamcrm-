@@ -16,9 +16,9 @@ import { cn } from "@/lib/utils";
 type Filter = "today" | "week" | "all";
 
 export default function Tasks() {
-  const { user } = useAuth();
-  const { data: tasks = [], isPending } = useTasksQuery(user?.id);
-  const { data: contacts = [] } = useContactsQuery(user?.id);
+  const { user, company } = useAuth();
+  const { data: tasks = [], isPending } = useTasksQuery(company?.id);
+  const { data: contacts = [] } = useContactsQuery(company?.id);
   const createTask = useCreateTaskMutation();
   const updateTask = useUpdateTaskMutation();
   const deleteTask = useDeleteTaskMutation();
@@ -49,13 +49,14 @@ export default function Tasks() {
   }, [tasks, filter]);
 
   const handleCreate = async () => {
-    if (!user || !form.title.trim()) {
+    if (!user || !company || !form.title.trim()) {
       toast.error("Título é obrigatório");
       return;
     }
     try {
       await createTask.mutateAsync({
         user_id: user.id,
+        company_id: company.id,
         title: form.title.trim(),
         due_at: form.due_at ? new Date(form.due_at).toISOString() : null,
         contact_id: form.contact_id === "none" ? null : form.contact_id,
@@ -69,8 +70,8 @@ export default function Tasks() {
   };
 
   const toggleDone = (taskId: string, done: boolean) => {
-    if (!user) return;
-    void updateTask.mutateAsync({ id: taskId, user_id: user.id, status: done ? "done" : "pending" });
+    if (!company) return;
+    void updateTask.mutateAsync({ id: taskId, company_id: company.id, status: done ? "done" : "pending" });
   };
 
   return (
@@ -176,7 +177,7 @@ export default function Tasks() {
                 size="icon"
                 variant="ghost"
                 className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                onClick={() => user && void deleteTask.mutateAsync({ id: task.id, user_id: user.id })}
+                onClick={() => company && void deleteTask.mutateAsync({ id: task.id, company_id: company.id })}
               >
                 <Trash2 className="h-4 w-4" />
               </Button>

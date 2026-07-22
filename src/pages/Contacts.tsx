@@ -15,8 +15,8 @@ import {
 } from "@/components/ui/dialog";
 
 export default function Contacts() {
-  const { user } = useAuth();
-  const { data: contacts = [], isPending } = useContactsQuery(user?.id);
+  const { user, company } = useAuth();
+  const { data: contacts = [], isPending } = useContactsQuery(company?.id);
   const createContact = useCreateContactMutation();
 
   const [search, setSearch] = useState("");
@@ -39,13 +39,14 @@ export default function Contacts() {
   }, [contacts, search, stageFilter]);
 
   const handleCreate = async () => {
-    if (!user || !form.name.trim()) {
+    if (!user || !company || !form.name.trim()) {
       toast.error("Nome é obrigatório");
       return;
     }
     try {
       await createContact.mutateAsync({
         user_id: user.id,
+        company_id: company.id,
         name: form.name.trim(),
         phone: form.phone.trim() || null,
         email: form.email.trim() || null,

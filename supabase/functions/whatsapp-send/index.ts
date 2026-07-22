@@ -55,10 +55,20 @@ Deno.serve(async (req: Request) => {
 
     const supabaseAdmin = createClient(supabaseUrl, serviceKey);
 
+    // Empresa do usuário logado (primeira membership; MVP = 1 empresa por usuário)
+    const { data: membership } = await supabaseAdmin
+      .from("company_members")
+      .select("company_id")
+      .eq("user_id", user.id)
+      .limit(1)
+      .maybeSingle();
+    if (!membership?.company_id) return json({ error: "Usuário sem empresa vinculada." }, 400);
+    const companyId = membership.company_id as string;
+
     const { data: config } = await supabaseAdmin
       .from("whatsapp_configs")
-      .select("id, phone_number_id, access_token, api_base_url, active")
-      .eq("user_id", user.id)
+      .select("id, company_id, phone_number_id, access_token, api_base_url, active")
+      .eq("company_id", companyId)
       .maybeSingle();
 
     if (!config) return json({ error: "WhatsApp não configurado. Conecte seu número em Configurações." }, 400);
@@ -173,6 +183,7 @@ Deno.serve(async (req: Request) => {
     if (contactId) {
       await supabaseAdmin.from("conversations").insert({
         user_id: user.id,
+        company_id: companyId,
         contact_id: contactId,
         sender: "user",
         content: sentContent,

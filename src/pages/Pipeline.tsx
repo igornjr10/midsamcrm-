@@ -13,8 +13,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 export default function Pipeline() {
-  const { user } = useAuth();
-  const { data: contacts = [] } = useContactsQuery(user?.id);
+  const { company } = useAuth();
+  const { data: contacts = [] } = useContactsQuery(company?.id);
   const updateContact = useUpdateContactMutation();
 
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -34,9 +34,9 @@ export default function Pipeline() {
   }, [contacts]);
 
   const moveContact = async (contactId: string, stage: string, extra?: { loss_reason?: string | null }) => {
-    if (!user) return;
+    if (!company) return;
     try {
-      await updateContact.mutateAsync({ id: contactId, user_id: user.id, stage, ...extra });
+      await updateContact.mutateAsync({ id: contactId, company_id: company.id, stage, ...extra });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erro ao mover contato");
     }
