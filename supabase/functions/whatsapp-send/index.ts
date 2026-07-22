@@ -93,6 +93,24 @@ Deno.serve(async (req: Request) => {
       return json(data, res.ok ? 200 : res.status);
     }
 
+    if (action === "sync-history") {
+      // Datafy: importa histórico de conversas + contatos do WhatsApp Business App.
+      // É one-shot por integração; o resultado chega depois via webhook (value.history).
+      const results: Array<Record<string, unknown>> = [];
+      for (const syncType of ["history", "smb_app_state_sync"]) {
+        const r = await fetch(`${graphBase}/${config.phone_number_id}/smb_app_data`, {
+          method: "POST",
+          headers: graphHeaders,
+          body: JSON.stringify({ messaging_product: "whatsapp", sync_type: syncType }),
+          signal: AbortSignal.timeout(15_000),
+        });
+        const rJson = await r.json().catch(() => ({}));
+        results.push({ sync_type: syncType, status: r.status, ...rJson });
+      }
+      const allOk = results.every((r) => Number(r.status) < 400);
+      return json({ success: allOk, results }, 200);
+    }
+
     const phone = body.phone as string | undefined;
     const contactId = body.contact_id as string | undefined;
     if (!phone) return json({ error: "phone é obrigatório" }, 400);

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Copy, CheckCircle, Loader2 } from "lucide-react";
+import { Copy, CheckCircle, Loader2, History } from "lucide-react";
 import { toast } from "sonner";
 import { supabase, SUPABASE_URL } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -28,6 +28,7 @@ export default function Settings() {
   const [label, setLabel] = useState("");
   const [status, setStatus] = useState<Record<string, string> | null>(null);
   const [statusLoading, setStatusLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   const webhookUrl = `${SUPABASE_URL}/functions/v1/whatsapp-webhook`;
 
@@ -82,6 +83,23 @@ export default function Settings() {
       toast.error(err instanceof Error ? err.message : "Erro ao verificar status");
     } finally {
       setStatusLoading(false);
+    }
+  };
+
+  const syncHistory = async () => {
+    setSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("whatsapp-send?action=sync-history", {
+        body: {},
+      });
+      if (error || (data && data.success === false)) {
+        throw new Error((data?.results?.[0]?.error as string) || error?.message || "Falha ao sincronizar");
+      }
+      toast.success("Sincronização iniciada! O histórico vai aparecer no Chat aos poucos (pode levar alguns minutos).");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao sincronizar histórico");
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -165,7 +183,7 @@ export default function Settings() {
                 </p>
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button onClick={handleSave} disabled={saveConfig.isPending}>
                   {saveConfig.isPending ? "Salvando..." : "Salvar configuração"}
                 </Button>
@@ -175,7 +193,21 @@ export default function Settings() {
                     Verificar status
                   </Button>
                 )}
+                {config && (
+                  <Button variant="outline" className="gap-1.5" onClick={() => void syncHistory()} disabled={syncing}>
+                    {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <History className="h-4 w-4" />}
+                    Sincronizar histórico
+                  </Button>
+                )}
               </div>
+
+              {config && (
+                <p className="text-xs text-muted-foreground">
+                  Use "Sincronizar histórico" depois de conectar o número para importar as conversas e
+                  contatos que já existiam no WhatsApp. É uma ação única por conexão e pode levar alguns
+                  minutos para tudo aparecer no Chat.
+                </p>
+              )}
 
               {status && (
                 <div className="rounded-lg border bg-muted/30 p-3 text-sm">

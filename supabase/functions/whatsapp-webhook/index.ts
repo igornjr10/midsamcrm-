@@ -458,6 +458,68 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ── Sincronização de histórico (Datafy smb_app_data) ────────────────────
+    // Chega em vários webhooks assíncronos após "trigger-history-sync".
+    // value.history[].threads[].messages[] — cada thread é uma conversa.
+    // A IA nunca responde a mensagens de histórico (só importa).
+    for (const chunk of (value.history ?? []) as Array<Record<string, unknown>>) {
+      for (const thread of (chunk.threads ?? []) as Array<Record<string, unknown>>) {
+        const phone = String(thread.id ?? "").replace(/\D/g, "");
+        if (!phone) continue;
+
+        const contact = await findOrCreateContact(supabase, config, phone, null);
+        if (!contact) continue;
+
+        const rows: Array<Record<string, unknown>> = [];
+        for (const m of (thread.messages ?? []) as Array<Record<string, unknown>>) {
+          const wamid = String(m.id ?? "");
+          if (!wamid) continue;
+          const type = String(m.type ?? "");
+          let text: string | null = null;
+          if (type === "text") text = String((m.text as Record<string, unknown>)?.body ?? "").trim() || null;
+          else if (type === "image") text = "[Imagem]";
+          else if (type === "video") text = "[Vídeo]";
+          else if (type === "audio") text = "[Áudio]";
+          else if (type === "document") text = "[Documento]";
+          else if (type === "sticker") text = "[Sticker]";
+          else if (type === "location") text = "[Localização]";
+          else if (type === "revoke") text = "[Mensagem apagada]";
+          else if (["reaction", "system", "edit", "unsupported"].includes(type)) text = null;
+          else text = `[${type}]`;
+          if (!text) continue;
+
+          const fromMe = (m.history_context as Record<string, unknown>)?.from_me === true;
+          const ts = Number(m.timestamp ?? 0);
+          rows.push({
+            user_id: config.user_id,
+            company_id: config.company_id,
+            contact_id: contact.id,
+            sender: fromMe ? "user" : "contact",
+            content: text,
+            channel: "whatsapp",
+            message_ref: wamid,
+            created_at: ts ? new Date(ts * 1000).toISOString() : new Date().toISOString(),
+            metadata: { source: "history_sync" },
+          });
+        }
+        if (rows.length > 0) {
+          const { error } = await supabase
+            .from("conversations")
+            .upsert(rows as never, { onConflict: "user_id,message_ref", ignoreDuplicates: true });
+          if (error) console.error("history upsert falhou:", error.message);
+        }
+      }
+    }
+
+    // ── Sincronização de contatos (Datafy smb_app_state_sync) ────────────────
+    for (const c of (value.state_sync ?? []) as Array<Record<string, unknown>>) {
+      if (c.action !== "add") continue;
+      const phone = String(c.wa_id ?? c.phone ?? "").replace(/\D/g, "");
+      if (!phone) continue;
+      const name = String(c.name ?? c.display_name ?? phone);
+      await findOrCreateContact(supabase, config, phone, name);
+    }
+
     return json({ ok: true });
   } catch (error) {
     console.error("whatsapp-webhook error:", error instanceof Error ? error.message : "unknown");
