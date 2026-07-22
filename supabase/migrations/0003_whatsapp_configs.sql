@@ -10,7 +10,7 @@ create table public.whatsapp_configs (
   phone_number_id text not null,
   waba_id text not null,
   access_token text not null,
-  webhook_verify_token text not null default encode(gen_random_bytes(12), 'hex'),
+  webhook_verify_token text not null default md5(random()::text || clock_timestamp()::text),
   app_id text,
   active boolean not null default true,
   label text,
