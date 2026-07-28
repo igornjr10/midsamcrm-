@@ -74,7 +74,9 @@ const DEFAULTS: Pick<
 export default function FollowupSettings() {
   const { company } = useAuth();
   const { data: config, isPending: configLoading } = useAiConfigQuery(company?.id);
-  const { data: savedSteps = [], isPending: stepsLoading } = useFollowupStepsQuery(company?.id);
+  // Sem valor padrão aqui: um `= []` criaria um array novo a cada render e o
+  // efeito que sincroniza a cadência entraria em loop enquanto não há dados.
+  const { data: savedSteps, isPending: stepsLoading } = useFollowupStepsQuery(company?.id);
   const { data: templates = [], isPending: templatesLoading } = useWhatsappTemplatesQuery(company?.id);
   const saveConfig = useSaveAiConfigMutation();
   const saveSteps = useSaveFollowupStepsMutation();
@@ -99,6 +101,7 @@ export default function FollowupSettings() {
   }, [config]);
 
   useEffect(() => {
+    if (!savedSteps) return;
     setSteps(savedSteps.map(toDraft));
   }, [savedSteps]);
 
