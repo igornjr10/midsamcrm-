@@ -1,5 +1,6 @@
 export * from "./useContactsQuery";
-export * from "./useTasksQuery";
+export * from "./usePipelineStagesQuery";
+export * from "./useAppointmentsQuery";
 export * from "./useConversationsQuery";
 export * from "./useWhatsappConfigQuery";
 export * from "./useAiConfigQuery";

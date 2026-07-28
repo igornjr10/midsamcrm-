@@ -1,6 +1,6 @@
 import { NavLink, Outlet, Navigate } from "react-router-dom";
 import {
-  Kanban, Users, MessageSquare, CalendarCheck, Settings, LogOut, Loader2, Bot,
+  Kanban, Users, MessageSquare, CalendarDays, Settings, LogOut, Loader2, Bot,
   Building2, Megaphone, Moon, Sun, Eye,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -14,7 +14,7 @@ const NAV_GROUPS = [
     items: [
       { to: "/", label: "Pipeline", icon: Kanban },
       { to: "/contatos", label: "Contatos", icon: Users },
-      { to: "/tarefas", label: "Tarefas", icon: CalendarCheck },
+      { to: "/agenda", label: "Agenda", icon: CalendarDays },
     ],
   },
   {

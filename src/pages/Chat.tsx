@@ -10,12 +10,14 @@ import {
   useLastMessagesQuery,
   useWhatsappConfigQuery,
   useUpdateContactMutation,
+  usePipelineStagesQuery,
 } from "@/hooks/queries";
-import type { Contact } from "@/lib/types";
+import { getStageLabel, getStageTone, getToneClasses, type Contact } from "@/lib/types";
 import SendTemplateDialog from "@/components/chat/SendTemplateDialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 function timeLabel(iso: string): string {
@@ -35,6 +37,7 @@ export default function Chat() {
   const { data: lastMessages } = useLastMessagesQuery(company?.id);
   const { data: messages = [] } = useConversationsQuery(company?.id, selectedContactId ?? undefined);
   const { data: whatsappConfig } = useWhatsappConfigQuery(company?.id);
+  const { data: stages = [] } = usePipelineStagesQuery(company?.id);
   const updateContact = useUpdateContactMutation();
 
   const [search, setSearch] = useState("");
@@ -61,6 +64,18 @@ export default function Chat() {
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ block: "end" });
   }, [messages.length, selectedContactId]);
+
+  // A etapa do funil é editável aqui pelo mesmo motivo que no Pipeline: quem
+  // está atendendo descobre no meio da conversa que o lead avançou.
+  const handleStageChange = async (stage: string) => {
+    if (!company || !selectedContact) return;
+    try {
+      await updateContact.mutateAsync({ id: selectedContact.id, company_id: company.id, stage });
+      toast.success(`Etapa: ${getStageLabel(stages, stage)}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao mudar a etapa");
+    }
+  };
 
   const handleSend = async () => {
     if (!selectedContact || !newMessage.trim() || !session) return;
@@ -134,15 +149,26 @@ export default function Chat() {
                       isSelected ? "bg-accent" : "hover:bg-accent/50",
                     )}
                   >
-                    <span
-                      className={cn(
-                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold",
-                        isSelected
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-primary/10 text-primary",
-                      )}
-                    >
-                      {contact.name.trim().charAt(0).toUpperCase() || "?"}
+                    <span className="relative shrink-0">
+                      <span
+                        className={cn(
+                          "flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold",
+                          isSelected
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-primary/10 text-primary",
+                        )}
+                      >
+                        {contact.name.trim().charAt(0).toUpperCase() || "?"}
+                      </span>
+                      {/* Mesma cor da etiqueta do cabeçalho: dá pra varrer a lista
+                          sem abrir cada conversa. */}
+                      <span
+                        title={getStageLabel(stages, contact.stage)}
+                        className={cn(
+                          "absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-card",
+                          getStageTone(stages, contact.stage).dot,
+                        )}
+                      />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center justify-between gap-2">
@@ -188,9 +214,40 @@ export default function Chat() {
                 </span>
                 <div className="min-w-0">
                   <p className="truncate font-semibold leading-tight">{selectedContact.name}</p>
-                  <p className="tabular truncate text-xs text-muted-foreground">
-                    {selectedContact.phone ?? "Sem telefone"}
-                  </p>
+                  <div className="mt-1 flex min-w-0 items-center gap-2">
+                    <span className="tabular truncate text-xs text-muted-foreground">
+                      {selectedContact.phone ?? "Sem telefone"}
+                    </span>
+                    <Select value={selectedContact.stage} onValueChange={(v) => void handleStageChange(v)}>
+                      <SelectTrigger
+                        aria-label="Etapa do funil"
+                        className={cn(
+                          "h-6 w-auto shrink-0 gap-1.5 rounded-full px-2 text-xs font-medium",
+                          getStageTone(stages, selectedContact.stage).badge,
+                        )}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <span
+                            className={cn(
+                              "h-1.5 w-1.5 shrink-0 rounded-full",
+                              getStageTone(stages, selectedContact.stage).dot,
+                            )}
+                          />
+                          {getStageLabel(stages, selectedContact.stage)}
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {stages.map((s) => (
+                          <SelectItem key={s.id} value={s.key}>
+                            <span className="flex items-center gap-2">
+                              <span className={cn("h-1.5 w-1.5 rounded-full", getToneClasses(s.tone).dot)} />
+                              {s.name}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">

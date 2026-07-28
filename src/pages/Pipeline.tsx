@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { Kanban, Phone } from "lucide-react";
+import { Kanban, Phone, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import { useContactsQuery, useUpdateContactMutation } from "@/hooks/queries";
-import { PIPELINE_STAGES, getStageTone, type Contact } from "@/lib/types";
+import { useContactsQuery, useUpdateContactMutation, usePipelineStagesQuery } from "@/hooks/queries";
+import { getToneClasses, type Contact } from "@/lib/types";
 import ContactDetailModal from "@/components/contacts/ContactDetailModal";
+import StagesDialog from "@/components/pipeline/StagesDialog";
 import { PageHeader } from "@/components/layout/PageHeader";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -16,23 +17,28 @@ import { cn } from "@/lib/utils";
 export default function Pipeline() {
   const { company } = useAuth();
   const { data: contacts = [] } = useContactsQuery(company?.id);
+  const { data: stages = [] } = usePipelineStagesQuery(company?.id);
   const updateContact = useUpdateContactMutation();
 
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   const [selected, setSelected] = useState<Contact | null>(null);
-  const [pendingLoss, setPendingLoss] = useState<{ contactId: string } | null>(null);
+  const [pendingLoss, setPendingLoss] = useState<{ contactId: string; stageKey: string } | null>(null);
   const [lossReason, setLossReason] = useState("");
+  const [stagesOpen, setStagesOpen] = useState(false);
 
+  // Contato numa etapa que foi excluída cai na primeira coluna — sem isso ele
+  // sumiria do quadro sem deixar rastro.
   const byStage = useMemo(() => {
     const map = new Map<string, Contact[]>();
-    for (const stage of PIPELINE_STAGES) map.set(stage.id, []);
+    for (const stage of stages) map.set(stage.key, []);
+    const fallback = stages[0]?.key;
     for (const contact of contacts) {
-      const list = map.get(contact.stage) ?? map.get("new")!;
-      list.push(contact);
+      const list = map.get(contact.stage) ?? (fallback ? map.get(fallback) : undefined);
+      list?.push(contact);
     }
     return map;
-  }, [contacts]);
+  }, [contacts, stages]);
 
   const moveContact = async (contactId: string, stage: string, extra?: { loss_reason?: string | null }) => {
     if (!company) return;
@@ -51,9 +57,9 @@ export default function Pipeline() {
     const contact = contacts.find((c) => c.id === contactId);
     if (!contact || contact.stage === stageId) return;
 
-    const target = PIPELINE_STAGES.find((s) => s.id === stageId);
+    const target = stages.find((s) => s.key === stageId);
     if (target?.kind === "lost") {
-      setPendingLoss({ contactId });
+      setPendingLoss({ contactId, stageKey: stageId });
       setLossReason("");
       return;
     }
@@ -62,7 +68,7 @@ export default function Pipeline() {
 
   const confirmLoss = () => {
     if (!pendingLoss) return;
-    void moveContact(pendingLoss.contactId, "lost", { loss_reason: lossReason.trim() || null });
+    void moveContact(pendingLoss.contactId, pendingLoss.stageKey, { loss_reason: lossReason.trim() || null });
     setPendingLoss(null);
   };
 
@@ -72,13 +78,19 @@ export default function Pipeline() {
         icon={Kanban}
         title="Pipeline"
         description={`${contacts.length} ${contacts.length === 1 ? "contato" : "contatos"} · arraste os cards para mudar de etapa`}
+        actions={
+          <Button variant="outline" onClick={() => setStagesOpen(true)}>
+            <SlidersHorizontal />
+            Etapas
+          </Button>
+        }
       />
 
       <div className="scrollbar-slim flex gap-4 overflow-x-auto pb-4">
-        {PIPELINE_STAGES.map((stage) => {
-          const stageContacts = byStage.get(stage.id) ?? [];
-          const tone = getStageTone(stage.id);
-          const isDropTarget = dragOverCol === stage.id;
+        {stages.map((stage) => {
+          const stageContacts = byStage.get(stage.key) ?? [];
+          const tone = getToneClasses(stage.tone);
+          const isDropTarget = dragOverCol === stage.key;
           return (
             <div
               key={stage.id}
@@ -88,15 +100,15 @@ export default function Pipeline() {
               )}
               onDragOver={(e) => {
                 e.preventDefault();
-                setDragOverCol(stage.id);
+                setDragOverCol(stage.key);
               }}
               onDragLeave={() => setDragOverCol(null)}
-              onDrop={(e) => handleDrop(e, stage.id)}
+              onDrop={(e) => handleDrop(e, stage.key)}
             >
               <div className="flex items-center justify-between gap-2 px-3.5 py-3">
                 <span className="flex min-w-0 items-center gap-2">
                   <span className={cn("h-2 w-2 shrink-0 rounded-full", tone.dot)} />
-                  <span className="truncate text-sm font-semibold">{stage.label}</span>
+                  <span className="truncate text-sm font-semibold">{stage.name}</span>
                 </span>
                 <span className="tabular shrink-0 rounded-full bg-background px-2 py-0.5 text-xs font-medium text-muted-foreground">
                   {stageContacts.length}
@@ -152,6 +164,8 @@ export default function Pipeline() {
       </div>
 
       <ContactDetailModal contact={selected} open={!!selected} onClose={() => setSelected(null)} />
+
+      <StagesDialog open={stagesOpen} onOpenChange={setStagesOpen} />
 
       <Dialog open={!!pendingLoss} onOpenChange={(v) => !v && setPendingLoss(null)}>
         <DialogContent className="max-w-sm">

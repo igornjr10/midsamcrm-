@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { isSupabaseConfigured } from "@/integrations/supabase/client";
 import { AuthProvider } from "@/hooks/useAuth";
@@ -10,7 +10,7 @@ import Signup from "@/pages/Signup";
 import Pipeline from "@/pages/Pipeline";
 import Contacts from "@/pages/Contacts";
 import Chat from "@/pages/Chat";
-import Tasks from "@/pages/Tasks";
+import Agenda from "@/pages/Agenda";
 import Campaigns from "@/pages/Campaigns";
 import Settings from "@/pages/Settings";
 import SdrIa from "@/pages/SdrIa";
@@ -55,7 +55,9 @@ export default function App() {
                 <Route path="/" element={<Pipeline />} />
                 <Route path="/contatos" element={<Contacts />} />
                 <Route path="/chat" element={<Chat />} />
-                <Route path="/tarefas" element={<Tasks />} />
+                <Route path="/agenda" element={<Agenda />} />
+                {/* Link antigo de Tarefas continua funcionando (favoritos, histórico). */}
+                <Route path="/tarefas" element={<Navigate to="/agenda" replace />} />
                 <Route path="/disparos" element={<Campaigns />} />
                 <Route path="/sdr" element={<SdrIa />} />
                 <Route path="/empresas" element={<Companies />} />

@@ -10,8 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { MessageSquare, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import { useUpdateContactMutation, useDeleteContactMutation, useCreateTaskMutation } from "@/hooks/queries";
-import { PIPELINE_STAGES, getStageLabel, getStageTone, type Contact } from "@/lib/types";
+import {
+  useUpdateContactMutation, useDeleteContactMutation, useCreateAppointmentMutation, usePipelineStagesQuery,
+} from "@/hooks/queries";
+import { getStageLabel, getStageTone, type Contact } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 interface ContactDetailModalProps {
@@ -25,15 +27,16 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
   const navigate = useNavigate();
   const updateContact = useUpdateContactMutation();
   const deleteContact = useDeleteContactMutation();
-  const createTask = useCreateTaskMutation();
+  const createAppointment = useCreateAppointmentMutation();
+  const { data: stages = [] } = usePipelineStagesQuery(company?.id);
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [stage, setStage] = useState("new");
   const [notes, setNotes] = useState("");
-  const [taskTitle, setTaskTitle] = useState("");
-  const [taskDueAt, setTaskDueAt] = useState("");
+  const [apptTitle, setApptTitle] = useState("");
+  const [apptStartsAt, setApptStartsAt] = useState("");
 
   useEffect(() => {
     if (!contact) return;
@@ -42,8 +45,8 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
     setEmail(contact.email ?? "");
     setStage(contact.stage);
     setNotes(contact.notes ?? "");
-    setTaskTitle("");
-    setTaskDueAt("");
+    setApptTitle("");
+    setApptStartsAt("");
   }, [contact]);
 
   if (!contact || !user || !company) return null;
@@ -77,21 +80,26 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
     }
   };
 
-  const handleCreateTask = async () => {
-    if (!taskTitle.trim()) return;
+  const handleCreateAppointment = async () => {
+    if (!apptTitle.trim() || !apptStartsAt) return;
+    const startsAt = new Date(apptStartsAt);
+    if (Number.isNaN(startsAt.getTime())) {
+      toast.error("Data inválida");
+      return;
+    }
     try {
-      await createTask.mutateAsync({
+      await createAppointment.mutateAsync({
         user_id: user.id,
         company_id: company.id,
-        title: taskTitle.trim(),
-        due_at: taskDueAt ? new Date(taskDueAt).toISOString() : null,
+        title: apptTitle.trim(),
+        starts_at: startsAt.toISOString(),
         contact_id: contact.id,
       });
-      toast.success("Tarefa criada");
-      setTaskTitle("");
-      setTaskDueAt("");
+      toast.success("Compromisso agendado");
+      setApptTitle("");
+      setApptStartsAt("");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao criar tarefa");
+      toast.error(err instanceof Error ? err.message : "Erro ao agendar");
     }
   };
 
@@ -105,12 +113,12 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
             </span>
             <span className="flex min-w-0 flex-wrap items-center gap-2">
               <span className="truncate">{contact.name}</span>
-              <Badge variant="outline" className={cn(getStageTone(contact.stage).badge)}>
-                {getStageLabel(contact.stage)}
+              <Badge variant="outline" className={cn(getStageTone(stages, contact.stage).badge)}>
+                {getStageLabel(stages, contact.stage)}
               </Badge>
             </span>
           </DialogTitle>
-          <DialogDescription>Edite os dados do contato ou crie uma tarefa vinculada.</DialogDescription>
+          <DialogDescription>Edite os dados do contato ou agende um compromisso.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -158,9 +166,9 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {PIPELINE_STAGES.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.label}
+                {stages.map((s) => (
+                  <SelectItem key={s.id} value={s.key}>
+                    {s.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -172,21 +180,25 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
           </div>
 
           <div className="rounded-lg border bg-muted/40 p-3">
-            <p className="mb-2 text-sm font-medium">Nova tarefa para este contato</p>
+            <p className="mb-2 text-sm font-medium">Novo compromisso com este contato</p>
             <div className="flex flex-col gap-2 sm:flex-row">
               <Input
-                placeholder="Título da tarefa"
-                value={taskTitle}
-                onChange={(e) => setTaskTitle(e.target.value)}
+                placeholder="Ex: reunião de apresentação"
+                value={apptTitle}
+                onChange={(e) => setApptTitle(e.target.value)}
               />
               <Input
                 type="datetime-local"
-                value={taskDueAt}
-                onChange={(e) => setTaskDueAt(e.target.value)}
+                value={apptStartsAt}
+                onChange={(e) => setApptStartsAt(e.target.value)}
                 className="sm:w-52"
               />
-              <Button variant="outline" onClick={handleCreateTask} disabled={!taskTitle.trim() || createTask.isPending}>
-                Criar
+              <Button
+                variant="outline"
+                onClick={handleCreateAppointment}
+                disabled={!apptTitle.trim() || !apptStartsAt || createAppointment.isPending}
+              >
+                Agendar
               </Button>
             </div>
           </div>

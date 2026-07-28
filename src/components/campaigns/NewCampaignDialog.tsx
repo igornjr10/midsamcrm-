@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Loader2, Search, Send } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { useContactsQuery, useWhatsappTemplatesQuery } from "@/hooks/queries";
+import { useContactsQuery, useWhatsappTemplatesQuery, usePipelineStagesQuery } from "@/hooks/queries";
 import type { CreateCampaignInput } from "@/hooks/queries";
-import { PIPELINE_STAGES, getStageLabel, getStageTone, type Contact, type VariableMap, type VariableSource } from "@/lib/types";
+import { getStageLabel, getStageTone, type Contact, type VariableMap, type VariableSource } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
   bodyPlaceholders,
@@ -44,6 +44,7 @@ export default function NewCampaignDialog({
 }) {
   const { company } = useAuth();
   const { data: contacts = [] } = useContactsQuery(company?.id);
+  const { data: stages = [] } = usePipelineStagesQuery(company?.id);
   const { data: templates = [], isPending: templatesLoading, error: templatesError } =
     useWhatsappTemplatesQuery(company?.id);
 
@@ -296,9 +297,9 @@ export default function NewCampaignDialog({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas as etapas</SelectItem>
-                  {PIPELINE_STAGES.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.label}
+                  {stages.map((s) => (
+                    <SelectItem key={s.id} value={s.key}>
+                      {s.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -330,8 +331,8 @@ export default function NewCampaignDialog({
                       />
                       <span className="flex-1 truncate font-medium">{contact.name}</span>
                       <span className="tabular text-muted-foreground">{contact.phone}</span>
-                      <Badge variant="outline" className={cn("shrink-0", getStageTone(contact.stage).badge)}>
-                        {getStageLabel(contact.stage)}
+                      <Badge variant="outline" className={cn("shrink-0", getStageTone(stages, contact.stage).badge)}>
+                        {getStageLabel(stages, contact.stage)}
                       </Badge>
                     </label>
                   ))}

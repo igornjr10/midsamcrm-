@@ -32,15 +32,23 @@ export interface Conversation {
   created_at: string;
 }
 
-export interface Task {
+export type AppointmentKind = "meeting" | "call" | "visit" | "followup" | "other";
+export type AppointmentStatus = "scheduled" | "done" | "canceled";
+
+export interface Appointment {
   id: string;
   user_id: string;
   company_id: string;
   contact_id: string | null;
   title: string;
   description: string | null;
-  due_at: string | null;
-  status: "pending" | "done";
+  location: string | null;
+  kind: AppointmentKind;
+  /** Sempre preenchido: a agenda é desenhada sobre o início do compromisso. */
+  starts_at: string;
+  ends_at: string | null;
+  all_day: boolean;
+  status: AppointmentStatus;
   created_at: string;
   updated_at: string;
 }
@@ -190,37 +198,59 @@ export interface Company {
   updated_at: string;
 }
 
-export const PIPELINE_STAGES = [
-  { id: "new", label: "Novo", kind: "open" },
-  { id: "contacted", label: "Contatado", kind: "open" },
-  { id: "proposal", label: "Proposta", kind: "open" },
-  { id: "negotiation", label: "Negociação", kind: "open" },
-  { id: "won", label: "Ganho", kind: "won" },
-  { id: "lost", label: "Perdido", kind: "lost" },
-] as const;
+export type StageTone =
+  | "slate" | "sky" | "indigo" | "violet" | "teal" | "amber" | "emerald" | "rose";
+export type StageKind = "open" | "won" | "lost";
 
-export type PipelineStageId = (typeof PIPELINE_STAGES)[number]["id"];
-
-export function getStageLabel(stageId: string): string {
-  return PIPELINE_STAGES.find((s) => s.id === stageId)?.label ?? stageId;
+/** Etapa do funil. Cada empresa tem as suas (tabela pipeline_stages). */
+export interface PipelineStage {
+  id: string;
+  company_id: string;
+  /** Valor gravado em contacts.stage. Imutável depois de criada. */
+  key: string;
+  name: string;
+  tone: StageTone;
+  kind: StageKind;
+  position: number;
+  created_at: string;
+  updated_at: string;
 }
 
 /**
- * Cor de cada etapa, do frio (lead novo) ao quente (negociação), com verde/vermelho
- * reservados pro desfecho. Fica aqui pra coluna do Pipeline e o selo em Contatos
- * nunca discordarem.
+ * Paleta das etapas, do frio (lead novo) ao quente (negociação), com verde e
+ * vermelho reservados pro desfecho. Fica aqui pra coluna do Pipeline, o selo em
+ * Contatos e a etiqueta do Chat nunca discordarem.
  */
-const STAGE_TONES: Record<string, { dot: string; badge: string }> = {
-  new: { dot: "bg-slate-400", badge: "border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300" },
-  contacted: { dot: "bg-sky-500", badge: "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300" },
-  proposal: { dot: "bg-indigo-500", badge: "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950 dark:text-indigo-300" },
-  negotiation: { dot: "bg-amber-500", badge: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300" },
-  won: { dot: "bg-emerald-500", badge: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" },
-  lost: { dot: "bg-rose-500", badge: "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-300" },
+export const STAGE_TONES: Record<StageTone, { label: string; dot: string; badge: string }> = {
+  slate: { label: "Cinza", dot: "bg-slate-400", badge: "border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300" },
+  sky: { label: "Azul", dot: "bg-sky-500", badge: "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300" },
+  indigo: { label: "Índigo", dot: "bg-indigo-500", badge: "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950 dark:text-indigo-300" },
+  violet: { label: "Roxo", dot: "bg-violet-500", badge: "border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950 dark:text-violet-300" },
+  teal: { label: "Turquesa", dot: "bg-teal-500", badge: "border-teal-300 bg-teal-50 text-teal-700 dark:border-teal-800 dark:bg-teal-950 dark:text-teal-300" },
+  amber: { label: "Âmbar", dot: "bg-amber-500", badge: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300" },
+  emerald: { label: "Verde", dot: "bg-emerald-500", badge: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" },
+  rose: { label: "Vermelho", dot: "bg-rose-500", badge: "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-300" },
 };
 
-const FALLBACK_TONE = { dot: "bg-muted-foreground", badge: "border-border text-muted-foreground" };
+const FALLBACK_TONE = { label: "Cinza", dot: "bg-muted-foreground", badge: "border-border text-muted-foreground" };
 
-export function getStageTone(stageId: string) {
-  return STAGE_TONES[stageId] ?? FALLBACK_TONE;
+export function getToneClasses(tone: string) {
+  return STAGE_TONES[tone as StageTone] ?? FALLBACK_TONE;
+}
+
+/**
+ * Etapa de um contato. O contato pode apontar para uma etapa que foi excluída
+ * (ou estar renderizando antes das etapas carregarem), então nunca devolve
+ * undefined: no pior caso mostra a própria chave em cinza.
+ */
+export function findStage(stages: PipelineStage[], key: string) {
+  return stages.find((s) => s.key === key) ?? null;
+}
+
+export function getStageLabel(stages: PipelineStage[], key: string): string {
+  return findStage(stages, key)?.name ?? key;
+}
+
+export function getStageTone(stages: PipelineStage[], key: string) {
+  return getToneClasses(findStage(stages, key)?.tone ?? "");
 }

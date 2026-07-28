@@ -2,8 +2,8 @@ import { useMemo, useState } from "react";
 import { Plus, Search, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import { useContactsQuery, useCreateContactMutation } from "@/hooks/queries";
-import { PIPELINE_STAGES, getStageLabel, getStageTone, type Contact } from "@/lib/types";
+import { useContactsQuery, useCreateContactMutation, usePipelineStagesQuery } from "@/hooks/queries";
+import { getStageLabel, getStageTone, type Contact } from "@/lib/types";
 import ContactDetailModal from "@/components/contacts/ContactDetailModal";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 export default function Contacts() {
   const { user, company } = useAuth();
   const { data: contacts = [], isPending } = useContactsQuery(company?.id);
+  const { data: stages = [] } = usePipelineStagesQuery(company?.id);
   const createContact = useCreateContactMutation();
 
   const [search, setSearch] = useState("");
@@ -122,9 +123,9 @@ export default function Contacts() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas as etapas</SelectItem>
-            {PIPELINE_STAGES.map((s) => (
-              <SelectItem key={s.id} value={s.id}>
-                {s.label}
+            {stages.map((s) => (
+              <SelectItem key={s.id} value={s.key}>
+                {s.name}
               </SelectItem>
             ))}
           </SelectContent>
@@ -180,8 +181,8 @@ export default function Contacts() {
                     <td className="tabular px-4 py-3">{contact.phone ?? "—"}</td>
                     <td className="px-4 py-3">{contact.email ?? "—"}</td>
                     <td className="px-4 py-3">
-                      <Badge variant="outline" className={cn(getStageTone(contact.stage).badge)}>
-                        {getStageLabel(contact.stage)}
+                      <Badge variant="outline" className={cn(getStageTone(stages, contact.stage).badge)}>
+                        {getStageLabel(stages, contact.stage)}
                       </Badge>
                     </td>
                     <td className="tabular px-4 py-3 text-muted-foreground">
