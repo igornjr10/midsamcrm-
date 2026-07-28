@@ -4,26 +4,34 @@ export function LogoMark({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 64 64" className={cn("h-9 w-9", className)} aria-hidden="true">
       <defs>
-        <radialGradient id="midsam-bg" cx="38%" cy="40%" r="90%">
-          <stop offset="0%" stopColor="#2E63E7" />
-          <stop offset="100%" stopColor="#122E70" />
-        </radialGradient>
+        <linearGradient id="midsam-spark" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#7FB3DF" />
+          <stop offset="100%" stopColor="#5A95CE" />
+        </linearGradient>
       </defs>
-      <rect width="64" height="64" rx="14" fill="url(#midsam-bg)" />
       <ellipse
         cx="32"
         cy="32"
-        rx="23"
-        ry="10.5"
+        rx="29"
+        ry="13.5"
         fill="none"
-        stroke="#fff"
-        strokeWidth="3.2"
-        strokeLinecap="round"
-        transform="rotate(-28 32 32)"
+        stroke="#EDF2F7"
+        strokeWidth="5.4"
+        transform="rotate(40 32 32)"
+      />
+      <ellipse
+        cx="32"
+        cy="32"
+        rx="29"
+        ry="13.5"
+        fill="none"
+        stroke="#A3C8E8"
+        strokeWidth="5.4"
+        transform="rotate(-40 32 32)"
       />
       <path
-        d="M32 17c1.6 8.6 6.4 13.4 15 15-8.6 1.6-13.4 6.4-15 15-1.6-8.6-6.4-13.4-15-15 8.6-1.6 13.4-6.4 15-15Z"
-        fill="#fff"
+        d="M32 19c1.2 7.6 5.2 11.6 12.8 12.8C37.2 33 33.2 37 32 44.6 30.8 37 26.8 33 19.2 31.8 26.8 30.6 30.8 26.6 32 19Z"
+        fill="url(#midsam-spark)"
       />
     </svg>
   );

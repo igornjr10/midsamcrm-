@@ -10,6 +10,7 @@ import Pipeline from "@/pages/Pipeline";
 import Contacts from "@/pages/Contacts";
 import Chat from "@/pages/Chat";
 import Tasks from "@/pages/Tasks";
+import Campaigns from "@/pages/Campaigns";
 import Settings from "@/pages/Settings";
 import SdrIa from "@/pages/SdrIa";
 import Companies from "@/pages/Companies";
@@ -53,6 +54,7 @@ export default function App() {
               <Route path="/contatos" element={<Contacts />} />
               <Route path="/chat" element={<Chat />} />
               <Route path="/tarefas" element={<Tasks />} />
+              <Route path="/disparos" element={<Campaigns />} />
               <Route path="/sdr" element={<SdrIa />} />
               <Route path="/empresas" element={<Companies />} />
               <Route path="/configuracoes" element={<Settings />} />

@@ -1,5 +1,5 @@
 import { NavLink, Outlet, Navigate } from "react-router-dom";
-import { Kanban, Users, MessageSquare, CalendarCheck, Settings, LogOut, Loader2, Bot, Building2 } from "lucide-react";
+import { Kanban, Users, MessageSquare, CalendarCheck, Settings, LogOut, Loader2, Bot, Building2, Megaphone } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Logo } from "@/components/layout/Logo";
 import { cn } from "@/lib/utils";
@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { to: "/", label: "Pipeline", icon: Kanban },
   { to: "/contatos", label: "Contatos", icon: Users },
   { to: "/chat", label: "Chat", icon: MessageSquare },
+  { to: "/disparos", label: "Disparos", icon: Megaphone },
   { to: "/tarefas", label: "Tarefas", icon: CalendarCheck },
   { to: "/sdr", label: "SDR IA", icon: Bot },
   { to: "/configuracoes", label: "Configurações", icon: Settings },

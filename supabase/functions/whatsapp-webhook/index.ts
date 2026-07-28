@@ -69,6 +69,28 @@ async function updateDeliveryStatus(
     status.status.includes("fail") || status.status.includes("error") ? "failed" :
     "sent";
 
+  const firstError = status.errors?.[0];
+
+  // Disparo em massa: reflete entrega/leitura/falha no destinatário da campanha.
+  const { data: target } = await supabase
+    .from("campaign_targets")
+    .select("id, campaign_id")
+    .eq("company_id", companyId)
+    .eq("message_ref", status.id)
+    .maybeSingle();
+  if (target?.id) {
+    await supabase
+      .from("campaign_targets")
+      .update({
+        status: normalized,
+        ...(firstError
+          ? { error: (firstError.message ?? firstError.title ?? "Falha na entrega").slice(0, 500) }
+          : {}),
+      })
+      .eq("id", target.id);
+    await supabase.rpc("recount_campaign", { p_campaign_id: target.campaign_id });
+  }
+
   const { data } = await supabase
     .from("conversations")
     .select("id, metadata")
@@ -82,7 +104,6 @@ async function updateDeliveryStatus(
       ? data.metadata as Record<string, unknown>
       : {};
 
-  const firstError = status.errors?.[0];
   await supabase
     .from("conversations")
     .update({

@@ -1,14 +1,22 @@
 // Envio de mensagens WhatsApp (Meta/Datafy Cloud API) para a conta logada.
 //
 // Ações (?action=):
-//   send-text  -> { phone, text, contact_id }
-//   send-media -> { phone, mediaUrl, mediaType, mimetype?, caption?, contact_id }
-//   get-status -> verifica saúde da conexão do número
+//   send-text      -> { phone, text, contact_id }
+//   send-media     -> { phone, mediaUrl, mediaType, mimetype?, caption?, contact_id }
+//   send-template  -> { phone, template_name, template_language, variable_map?, template_body?, contact_id }
+//   list-templates -> templates da WABA (só os aprovados pela Meta)
+//   get-status     -> verifica saúde da conexão do número
 //
 // verify_jwt=false no config.toml (preflight OPTIONS não tem Authorization);
 // o JWT do usuário é validado manualmente aqui.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { assertWhatsAppResponse } from "../_shared/whatsapp-error.ts";
+import { normalizePhone } from "../_shared/phone.ts";
+import {
+  buildTemplatePayload,
+  renderTemplateText,
+  type VariableMap,
+} from "../_shared/whatsapp-template.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -26,14 +34,6 @@ function json(body: unknown, status = 200): Response {
 function resolveApiBase(raw: string | null | undefined): string {
   return (raw?.trim() || "https://graph.facebook.com/v21.0").replace(/\/$/, "");
 }
-
-const normalizePhone = (phone: string) => {
-  let digits = phone.replace(/\D/g, "");
-  if (!digits.startsWith("55") && digits.length <= 11) {
-    digits = "55" + digits;
-  }
-  return digits;
-};
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -67,7 +67,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: config } = await supabaseAdmin
       .from("whatsapp_configs")
-      .select("id, company_id, phone_number_id, access_token, api_base_url, active")
+      .select("id, company_id, phone_number_id, waba_id, access_token, api_base_url, active")
       .eq("company_id", companyId)
       .maybeSingle();
 
@@ -91,6 +91,25 @@ Deno.serve(async (req: Request) => {
       );
       const data = await res.json().catch(() => ({}));
       return json(data, res.ok ? 200 : res.status);
+    }
+
+    if (action === "list-templates") {
+      if (!config.waba_id) {
+        return json({ error: "WABA ID não configurado. Preencha em Configurações." }, 400);
+      }
+      const res = await fetch(
+        `${graphBase}/${config.waba_id}/message_templates?limit=200&fields=name,status,category,language,components`,
+        { headers: graphHeaders, signal: AbortSignal.timeout(20_000) },
+      );
+      const data = await res.json().catch(() => ({})) as {
+        data?: Array<Record<string, unknown>>;
+        error?: { message?: string };
+      };
+      if (!res.ok) {
+        return json({ error: data.error?.message ?? "Falha ao listar templates." }, 200);
+      }
+      const approved = (data.data ?? []).filter((t) => String(t.status).toUpperCase() === "APPROVED");
+      return json({ templates: approved });
     }
 
     if (action === "sync-history") {
@@ -186,6 +205,42 @@ Deno.serve(async (req: Request) => {
           },
         }),
         signal: AbortSignal.timeout(30_000),
+      });
+    } else if (action === "send-template") {
+      const templateName = body.template_name as string | undefined;
+      if (!templateName?.trim()) return json({ error: "template_name é obrigatório" }, 400);
+
+      const language = (body.template_language as string | undefined)?.trim() || "pt_BR";
+      const variableMap = (body.variable_map as VariableMap | undefined) ?? {};
+      const templateBody = (body.template_body as string | undefined) ?? "";
+
+      const { data: contact } = contactId
+        ? await supabaseAdmin
+            .from("contacts")
+            .select("name, phone, email")
+            .eq("id", contactId)
+            .eq("company_id", companyId)
+            .maybeSingle()
+        : { data: null };
+
+      const { payload, bodyParams } = buildTemplatePayload(
+        normalizePhone(phone),
+        templateName.trim(),
+        language,
+        variableMap,
+        (contact as { name?: string; phone?: string; email?: string } | null) ?? { phone },
+      );
+
+      sentContent = templateBody
+        ? renderTemplateText(templateBody, bodyParams)
+        : `[template: ${templateName.trim()}]`;
+      sentMetadata = { template: templateName.trim(), templateLanguage: language, isTemplate: true };
+
+      sendResponse = await fetch(`${graphBase}/${config.phone_number_id}/messages`, {
+        method: "POST",
+        headers: graphHeaders,
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(20_000),
       });
     } else {
       return json({ error: `Ação desconhecida: ${action}` }, 400);

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Send, Search, Loader2, Bot, Play } from "lucide-react";
+import { Send, Search, Loader2, Bot, Play, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -12,6 +12,7 @@ import {
   useUpdateContactMutation,
 } from "@/hooks/queries";
 import type { Contact } from "@/lib/types";
+import SendTemplateDialog from "@/components/chat/SendTemplateDialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -39,6 +40,7 @@ export default function Chat() {
   const [search, setSearch] = useState("");
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
+  const [templateOpen, setTemplateOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const selectedContact: Contact | null =
@@ -150,36 +152,48 @@ export default function Chat() {
                 <p className="font-semibold">{selectedContact.name}</p>
                 <p className="text-xs text-muted-foreground">{selectedContact.phone ?? "Sem telefone"}</p>
               </div>
-              <Button
-                size="sm"
-                variant={selectedContact.ai_paused ? "default" : "outline"}
-                className="gap-1.5"
-                onClick={() =>
-                  company &&
-                  void updateContact.mutateAsync({
-                    id: selectedContact.id,
-                    company_id: company.id,
-                    ai_paused: !selectedContact.ai_paused,
-                  })
-                }
-                title={
-                  selectedContact.ai_paused
-                    ? "A IA está pausada nesta conversa; clique para reativar"
-                    : "Pausar a IA nesta conversa e assumir o atendimento"
-                }
-              >
-                {selectedContact.ai_paused ? (
-                  <>
-                    <Play className="h-3.5 w-3.5" />
-                    Reativar IA
-                  </>
-                ) : (
-                  <>
-                    <Bot className="h-3.5 w-3.5" />
-                    Pausar IA
-                  </>
-                )}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => setTemplateOpen(true)}
+                  title="Enviar um template aprovado (necessário fora da janela de 24h)"
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  Template
+                </Button>
+                <Button
+                  size="sm"
+                  variant={selectedContact.ai_paused ? "default" : "outline"}
+                  className="gap-1.5"
+                  onClick={() =>
+                    company &&
+                    void updateContact.mutateAsync({
+                      id: selectedContact.id,
+                      company_id: company.id,
+                      ai_paused: !selectedContact.ai_paused,
+                    })
+                  }
+                  title={
+                    selectedContact.ai_paused
+                      ? "A IA está pausada nesta conversa; clique para reativar"
+                      : "Pausar a IA nesta conversa e assumir o atendimento"
+                  }
+                >
+                  {selectedContact.ai_paused ? (
+                    <>
+                      <Play className="h-3.5 w-3.5" />
+                      Reativar IA
+                    </>
+                  ) : (
+                    <>
+                      <Bot className="h-3.5 w-3.5" />
+                      Pausar IA
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
             <ScrollArea className="flex-1 p-4">
               <div className="flex min-h-full flex-col justify-end gap-2">
@@ -237,6 +251,12 @@ export default function Chat() {
           </>
         )}
       </div>
+
+      <SendTemplateDialog
+        contact={selectedContact}
+        open={templateOpen}
+        onOpenChange={setTemplateOpen}
+      />
     </div>
   );
 }

@@ -73,6 +73,55 @@ export interface AiConfig {
   updated_at: string;
 }
 
+// Fonte de cada variável ({{1}}, {{2}}...) de um template aprovado.
+export type VariableSource =
+  | { source: "contact_name" }
+  | { source: "contact_first_name" }
+  | { source: "contact_phone" }
+  | { source: "contact_email" }
+  | { source: "text"; value: string };
+
+export interface VariableMap {
+  header?: VariableSource[];
+  body?: VariableSource[];
+  header_media_url?: string | null;
+  header_media_type?: "image" | "video" | "document" | null;
+}
+
+export type CampaignStatus = "draft" | "running" | "paused" | "done" | "canceled";
+
+export interface Campaign {
+  id: string;
+  company_id: string;
+  user_id: string;
+  name: string;
+  template_name: string;
+  template_language: string;
+  template_body: string | null;
+  variable_map: VariableMap;
+  status: CampaignStatus;
+  total_count: number;
+  sent_count: number;
+  failed_count: number;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export interface CampaignTarget {
+  id: string;
+  campaign_id: string;
+  company_id: string;
+  contact_id: string | null;
+  phone: string;
+  status: "pending" | "sent" | "delivered" | "read" | "failed";
+  message_ref: string | null;
+  error: string | null;
+  sent_at: string | null;
+  created_at: string;
+}
+
 export interface Company {
   id: string;
   name: string;
