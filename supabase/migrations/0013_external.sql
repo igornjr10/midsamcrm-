@@ -1,0 +1,6 @@
+-- Placeholder. Esta versão foi aplicada no banco por OUTRO projeto que divide o
+-- mesmo Supabase (tabelas delivery_zones, orders, couriers...), não pelo CRM.
+--
+-- O arquivo existe só para o "supabase db push" reconciliar o histórico: sem um
+-- arquivo local para cada versão remota, o CLI recusa a subir qualquer migration
+-- nova. Deve permanecer vazio — o SQL real vive no repo do outro projeto.
