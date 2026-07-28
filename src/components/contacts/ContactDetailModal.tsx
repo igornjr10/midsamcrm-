@@ -11,7 +11,8 @@ import { MessageSquare, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useUpdateContactMutation, useDeleteContactMutation, useCreateTaskMutation } from "@/hooks/queries";
-import { PIPELINE_STAGES, getStageLabel, type Contact } from "@/lib/types";
+import { PIPELINE_STAGES, getStageLabel, getStageTone, type Contact } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 interface ContactDetailModalProps {
   contact: Contact | null;
@@ -98,9 +99,16 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {contact.name}
-            <Badge variant="outline">{getStageLabel(contact.stage)}</Badge>
+          <DialogTitle className="flex items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+              {contact.name.trim().charAt(0).toUpperCase() || "?"}
+            </span>
+            <span className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="truncate">{contact.name}</span>
+              <Badge variant="outline" className={cn(getStageTone(contact.stage).badge)}>
+                {getStageLabel(contact.stage)}
+              </Badge>
+            </span>
           </DialogTitle>
           <DialogDescription>Edite os dados do contato ou crie uma tarefa vinculada.</DialogDescription>
         </DialogHeader>
@@ -110,17 +118,21 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
             <Button
               size="sm"
               variant="outline"
-              className="gap-1.5"
               onClick={() => {
                 onClose();
                 navigate(`/chat?contato=${contact.id}`);
               }}
             >
-              <MessageSquare className="h-3.5 w-3.5" />
+              <MessageSquare />
               Abrir conversa
             </Button>
-            <Button size="sm" variant="outline" className="gap-1.5 text-destructive" onClick={handleDelete}>
-              <Trash2 className="h-3.5 w-3.5" />
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={handleDelete}
+            >
+              <Trash2 />
               Excluir
             </Button>
           </div>
@@ -159,7 +171,7 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
             <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
 
-          <div className="rounded-lg border p-3">
+          <div className="rounded-lg border bg-muted/40 p-3">
             <p className="mb-2 text-sm font-medium">Nova tarefa para este contato</p>
             <div className="flex flex-col gap-2 sm:flex-row">
               <Input

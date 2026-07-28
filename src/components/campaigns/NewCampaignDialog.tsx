@@ -3,7 +3,8 @@ import { AlertCircle, Loader2, Search, Send } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useContactsQuery, useWhatsappTemplatesQuery } from "@/hooks/queries";
 import type { CreateCampaignInput } from "@/hooks/queries";
-import { PIPELINE_STAGES, getStageLabel, type Contact, type VariableMap, type VariableSource } from "@/lib/types";
+import { PIPELINE_STAGES, getStageLabel, getStageTone, type Contact, type VariableMap, type VariableSource } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import {
   bodyPlaceholders,
   defaultVariables,
@@ -281,7 +282,7 @@ export default function NewCampaignDialog({
 
             <div className="flex flex-col gap-2 sm:flex-row">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
                   className="pl-9"
                   placeholder="Buscar por nome ou telefone"
@@ -304,7 +305,7 @@ export default function NewCampaignDialog({
               </Select>
             </div>
 
-            <label className="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm">
+            <label className="flex cursor-pointer items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm transition-colors hover:bg-accent/50">
               <Checkbox checked={allFilteredSelected} onCheckedChange={toggleAllFiltered} />
               Selecionar todos os {filtered.length} contatos filtrados
             </label>
@@ -321,15 +322,15 @@ export default function NewCampaignDialog({
                   {filtered.map((contact) => (
                     <label
                       key={contact.id}
-                      className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-muted/40"
+                      className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm transition-colors hover:bg-accent/40"
                     >
                       <Checkbox
                         checked={selectedIds.has(contact.id)}
                         onCheckedChange={() => toggleOne(contact.id)}
                       />
                       <span className="flex-1 truncate font-medium">{contact.name}</span>
-                      <span className="text-muted-foreground">{contact.phone}</span>
-                      <Badge variant="outline" className="shrink-0">
+                      <span className="tabular text-muted-foreground">{contact.phone}</span>
+                      <Badge variant="outline" className={cn("shrink-0", getStageTone(contact.stage).badge)}>
                         {getStageLabel(contact.stage)}
                       </Badge>
                     </label>
@@ -345,8 +346,8 @@ export default function NewCampaignDialog({
             </p>
           )}
 
-          <Button className="w-full gap-2" onClick={handleSubmit} disabled={!canSubmit}>
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          <Button className="w-full" onClick={handleSubmit} disabled={!canSubmit}>
+            {submitting ? <Loader2 className="animate-spin" /> : <Send />}
             {submitting
               ? "Disparando..."
               : `Disparar para ${selectedIds.size} contato${selectedIds.size === 1 ? "" : "s"}`}

@@ -14,13 +14,16 @@ import {
 } from "@/hooks/queries";
 import type { Campaign, CampaignStatus } from "@/lib/types";
 import NewCampaignDialog from "@/components/campaigns/NewCampaignDialog";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState, LoadingState } from "@/components/ui/empty-state";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 const STATUS_LABELS: Record<CampaignStatus, string> = {
   draft: "Rascunho",
@@ -38,20 +41,16 @@ const TARGET_STATUS_LABELS: Record<string, string> = {
   failed: "Falhou",
 };
 
+const STATUS_VARIANTS: Record<CampaignStatus, React.ComponentProps<typeof Badge>["variant"]> = {
+  draft: "outline",
+  running: "default",
+  paused: "warning",
+  done: "success",
+  canceled: "destructive",
+};
+
 function StatusBadge({ status }: { status: CampaignStatus }) {
-  const className =
-    status === "done"
-      ? "border-green-500/40 text-green-600"
-      : status === "running"
-        ? "border-primary/40 text-primary"
-        : status === "canceled"
-          ? "border-destructive/40 text-destructive"
-          : "";
-  return (
-    <Badge variant="outline" className={className}>
-      {STATUS_LABELS[status]}
-    </Badge>
-  );
+  return <Badge variant={STATUS_VARIANTS[status]}>{STATUS_LABELS[status]}</Badge>;
 }
 
 function CampaignDetail({ campaign, onClose }: { campaign: Campaign | null; onClose: () => void }) {
@@ -90,13 +89,12 @@ function CampaignDetail({ campaign, onClose }: { campaign: Campaign | null; onCl
                     </span>
                   )}
                   <Badge
-                    variant="outline"
-                    className={
+                    variant={
                       target.status === "failed"
-                        ? "border-destructive/40 text-destructive"
+                        ? "destructive"
                         : target.status === "read" || target.status === "delivered"
-                          ? "border-green-500/40 text-green-600"
-                          : ""
+                          ? "success"
+                          : "outline"
                     }
                   >
                     {TARGET_STATUS_LABELS[target.status] ?? target.status}
@@ -134,7 +132,7 @@ export default function Campaigns() {
       let totalSent = 0;
       let totalFailed = 0;
       for (let round = 0; round < 500; round++) {
-        const result = await dispatchCampaign.mutateAsync(campaignId);
+        const result = await dispatchCampaign.mutateAsync({ campaignId, companyId: company?.id });
         totalSent += result.sent;
         totalFailed += result.failed;
         void refreshCampaigns();
@@ -155,7 +153,10 @@ export default function Campaigns() {
 
   const handleCreate = async (input: CreateCampaignInput) => {
     try {
-      const { campaign, skipped } = await createCampaign.mutateAsync(input);
+      const { campaign, skipped } = await createCampaign.mutateAsync({
+        ...input,
+        company_id: company?.id,
+      });
       setDialogOpen(false);
       void refreshCampaigns();
       if (skipped > 0) {
@@ -178,21 +179,22 @@ export default function Campaigns() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Megaphone className="h-6 w-6 text-primary" />
-          <h2 className="text-2xl font-bold">Disparos</h2>
-        </div>
-        <Button className="gap-1.5" onClick={() => setDialogOpen(true)}>
-          <Plus className="h-4 w-4" />
-          Nova campanha
-        </Button>
-      </div>
+    <div>
+      <PageHeader
+        icon={Megaphone}
+        title="Disparos"
+        description="Campanhas em massa por template aprovado do WhatsApp"
+        actions={
+          <Button onClick={() => setDialogOpen(true)}>
+            <Plus />
+            Nova campanha
+          </Button>
+        }
+      />
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Como funciona</CardTitle>
+      <Card className="mb-6 border-primary/20 bg-primary/5 shadow-none">
+        <CardHeader>
+          <CardTitle>Como funciona</CardTitle>
           <CardDescription>
             O WhatsApp só permite iniciar conversa (fora das 24h após a última mensagem do cliente)
             com um template aprovado pela Meta. Os templates aprovados na sua WABA aparecem
@@ -203,17 +205,19 @@ export default function Campaigns() {
       </Card>
 
       {isPending ? (
-        <div className="flex justify-center py-10">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
+        <LoadingState label="Carregando campanhas..." />
       ) : campaigns.length === 0 ? (
-        <div className="rounded-lg border border-dashed p-10 text-center">
-          <Send className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-          <p className="font-medium">Nenhuma campanha ainda</p>
-          <p className="text-sm text-muted-foreground">
-            Crie a primeira campanha para disparar um template aprovado para a sua base.
-          </p>
-        </div>
+        <EmptyState
+          icon={Send}
+          title="Nenhuma campanha ainda"
+          description="Crie a primeira campanha para disparar um template aprovado para a sua base."
+          action={
+            <Button onClick={() => setDialogOpen(true)}>
+              <Plus />
+              Nova campanha
+            </Button>
+          }
+        />
       ) : (
         <div className="space-y-3">
           {campaigns.map((campaign) => {
@@ -224,35 +228,33 @@ export default function Campaigns() {
             const isDispatching = dispatchingId === campaign.id;
 
             return (
-              <div key={campaign.id} className="rounded-lg border p-4">
+              <div
+                key={campaign.id}
+                className="rounded-xl border bg-card p-4 shadow-card transition-shadow hover:shadow-card-hover"
+              >
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                  <button className="text-left" onClick={() => setDetail(campaign)}>
-                    <p className="font-medium hover:underline">{campaign.name}</p>
-                    <p className="text-xs text-muted-foreground">
+                  <button className="min-w-0 text-left" onClick={() => setDetail(campaign)}>
+                    <p className="truncate font-semibold hover:underline">{campaign.name}</p>
+                    <p className="tabular mt-0.5 truncate text-xs text-muted-foreground">
                       <span className="font-mono">{campaign.template_name}</span> ·{" "}
                       {new Date(campaign.created_at).toLocaleString("pt-BR")}
                     </p>
                   </button>
-                  <div className="flex items-center gap-2">
+                  <div className="flex shrink-0 items-center gap-2">
                     <StatusBadge status={campaign.status} />
                     {campaign.status === "running" && !isDispatching && (
                       <>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="gap-1.5"
-                          onClick={() => void runDispatchLoop(campaign.id)}
-                        >
-                          <Play className="h-3.5 w-3.5" />
+                        <Button size="sm" variant="outline" onClick={() => void runDispatchLoop(campaign.id)}>
+                          <Play />
                           Continuar
                         </Button>
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="gap-1.5 text-destructive"
+                          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                           onClick={() => void handleCancel(campaign)}
                         >
-                          <X className="h-3.5 w-3.5" />
+                          <X />
                           Cancelar
                         </Button>
                       </>
@@ -266,16 +268,37 @@ export default function Campaigns() {
                   </div>
                 </div>
 
-                <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary transition-all"
-                    style={{ width: `${percent}%` }}
-                  />
+                <div className="mt-3 flex items-center gap-3">
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={cn(
+                        "h-full rounded-full transition-all duration-500",
+                        campaign.failed_count > 0 && campaign.status === "done"
+                          ? "bg-warning"
+                          : campaign.status === "canceled"
+                            ? "bg-muted-foreground"
+                            : "bg-primary",
+                      )}
+                      style={{ width: `${percent}%` }}
+                    />
+                  </div>
+                  <span className="tabular w-10 shrink-0 text-right text-xs font-medium text-muted-foreground">
+                    {percent}%
+                  </span>
                 </div>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {campaign.sent_count} enviadas · {campaign.failed_count} falhas ·{" "}
-                  {campaign.total_count} no total
-                </p>
+                <div className="tabular mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                    {campaign.sent_count} enviadas
+                  </span>
+                  {campaign.failed_count > 0 && (
+                    <span className="flex items-center gap-1.5 text-destructive">
+                      <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
+                      {campaign.failed_count} falhas
+                    </span>
+                  )}
+                  <span>{campaign.total_count} no total</span>
+                </div>
               </div>
             );
           })}

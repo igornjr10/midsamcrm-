@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { History, Loader2, RefreshCw } from "lucide-react";
+import { History, RefreshCw } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { followupLogsQueryKey, useFollowupLogsQuery } from "@/hooks/queries";
@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmptyState, LoadingState } from "@/components/ui/empty-state";
 
 const STATUS_LABELS: Record<FollowupLogStatus, string> = {
   sent: "Enviado",
@@ -21,11 +22,11 @@ const KIND_LABELS: Record<FollowupKind, string> = {
   template: "Template",
 };
 
-function statusClass(status: FollowupLogStatus): string {
-  if (status === "sent") return "border-green-500/40 text-green-600";
-  if (status === "failed") return "border-destructive/40 text-destructive";
-  return "border-amber-500/40 text-amber-600";
-}
+const STATUS_VARIANTS: Record<FollowupLogStatus, React.ComponentProps<typeof Badge>["variant"]> = {
+  sent: "success",
+  failed: "destructive",
+  skipped: "warning",
+};
 
 export default function FollowupHistory() {
   const { company } = useAuth();
@@ -57,13 +58,7 @@ export default function FollowupHistory() {
     [logs],
   );
 
-  if (isPending) {
-    return (
-      <div className="flex justify-center py-10">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
+  if (isPending) return <LoadingState label="Carregando histórico..." />;
 
   return (
     <div className="space-y-4">
@@ -87,54 +82,70 @@ export default function FollowupHistory() {
         </Select>
         <Button
           variant="outline"
-          className="gap-1.5"
           disabled={isFetching}
           onClick={() =>
             void queryClient.invalidateQueries({ queryKey: followupLogsQueryKey(company?.id) })
           }
         >
-          <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
+          <RefreshCw className={isFetching ? "animate-spin" : ""} />
           Atualizar
         </Button>
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        Últimos {logs.length} registros · {totals.sent} enviados · {totals.failed} falhas ·{" "}
-        {totals.skipped} pulados
-      </p>
+      <div className="tabular flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span>Últimos {logs.length} registros</span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-success" />
+          {totals.sent} enviados
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
+          {totals.failed} falhas
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+          {totals.skipped} pulados
+        </span>
+      </div>
 
       {filtered.length === 0 ? (
-        <div className="rounded-lg border border-dashed p-10 text-center">
-          <History className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-          <p className="font-medium">
-            {logs.length === 0 ? "Nenhum follow-up enviado ainda" : "Nenhum registro com esses filtros"}
-          </p>
-          {logs.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              Assim que a cadência rodar, cada envio aparece aqui com o texto e o resultado.
-            </p>
-          )}
-        </div>
+        <EmptyState
+          icon={History}
+          title={
+            logs.length === 0 ? "Nenhum follow-up enviado ainda" : "Nenhum registro com esses filtros"
+          }
+          description={
+            logs.length === 0
+              ? "Assim que a cadência rodar, cada envio aparece aqui com o texto e o resultado."
+              : undefined
+          }
+        />
       ) : (
-        <div className="divide-y rounded-lg border">
+        <div className="divide-y overflow-hidden rounded-xl border bg-card shadow-card">
           {filtered.map((log) => (
-            <div key={log.id} className="space-y-1.5 p-3">
+            <div key={log.id} className="space-y-2 p-3.5 transition-colors hover:bg-accent/40">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">{log.contacts?.name ?? "Contato removido"}</span>
                 {log.contacts?.phone && (
-                  <span className="text-xs text-muted-foreground">{log.contacts.phone}</span>
+                  <span className="tabular text-xs text-muted-foreground">{log.contacts.phone}</span>
                 )}
-                <Badge variant="outline">Passo {log.step_order}</Badge>
+                <Badge variant="secondary">Passo {log.step_order}</Badge>
                 <Badge variant="outline">{KIND_LABELS[log.kind] ?? log.kind}</Badge>
-                <Badge variant="outline" className={statusClass(log.status)}>
+                <Badge variant={STATUS_VARIANTS[log.status] ?? "outline"}>
                   {STATUS_LABELS[log.status] ?? log.status}
                 </Badge>
-                <span className="ml-auto text-xs text-muted-foreground">
+                <span className="tabular ml-auto text-xs text-muted-foreground">
                   {new Date(log.created_at).toLocaleString("pt-BR")}
                 </span>
               </div>
-              {log.content && <p className="whitespace-pre-wrap text-sm">{log.content}</p>}
-              {log.error && <p className="text-xs text-destructive">{log.error}</p>}
+              {log.content && (
+                <p className="whitespace-pre-wrap rounded-lg bg-muted/50 p-2.5 text-sm leading-relaxed">
+                  {log.content}
+                </p>
+              )}
+              {log.error && (
+                <p className="rounded-lg bg-destructive/10 p-2 text-xs text-destructive">{log.error}</p>
+              )}
             </div>
           ))}
         </div>

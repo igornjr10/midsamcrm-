@@ -84,10 +84,10 @@ export interface RunFollowupResult {
 export function useRunFollowupMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    // A empresa é resolvida no backend pelo JWT; o id serve só para invalidar
-    // o histórico depois.
-    mutationFn: async (_companyId: string) => {
-      const { data, error } = await supabase.functions.invoke("sdr-followup", { body: {} });
+    mutationFn: async (companyId: string) => {
+      const { data, error } = await supabase.functions.invoke("sdr-followup", {
+        body: { company_id: companyId },
+      });
       if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error as string);
       return data as RunFollowupResult;

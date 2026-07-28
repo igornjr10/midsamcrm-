@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Send, Search, Loader2, Bot, Play, FileText } from "lucide-react";
+import { Send, Search, Loader2, Bot, Play, FileText, MessageSquare, MessagesSquare } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -78,7 +78,12 @@ export default function Chat() {
     setNewMessage("");
     try {
       const { data, error } = await supabase.functions.invoke("whatsapp-send?action=send-text", {
-        body: { phone: selectedContact.phone, text, contact_id: selectedContact.id },
+        body: {
+          phone: selectedContact.phone,
+          text,
+          contact_id: selectedContact.id,
+          company_id: company?.id,
+        },
       });
       if (error || (data && data.success === false)) {
         throw new Error((data?.error as string) || error?.message || "Falha ao enviar");
@@ -92,12 +97,13 @@ export default function Chat() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] gap-4">
+    // Desconta o padding vertical do <main> (p-6 = 3rem no total, lg:p-8 = 4rem)
+    <div className="flex h-[calc(100vh-3rem)] gap-4 lg:h-[calc(100vh-4rem)]">
       {/* Lista de conversas */}
-      <div className="flex w-72 flex-shrink-0 flex-col rounded-lg border">
+      <div className="flex w-72 flex-shrink-0 flex-col overflow-hidden rounded-xl border bg-card shadow-card">
         <div className="border-b p-3">
           <div className="relative">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Buscar contato..."
               className="pl-9"
@@ -108,65 +114,98 @@ export default function Chat() {
         </div>
         <ScrollArea className="flex-1">
           {orderedContacts.length === 0 ? (
-            <p className="p-4 text-center text-sm text-muted-foreground">Nenhum contato</p>
+            <div className="px-4 py-10 text-center">
+              <MessagesSquare className="mx-auto mb-2 h-7 w-7 text-muted-foreground/60" />
+              <p className="text-sm text-muted-foreground">
+                {search ? "Nenhum contato encontrado" : "Nenhum contato ainda"}
+              </p>
+            </div>
           ) : (
-            orderedContacts.map((contact) => {
-              const last = lastMessages?.get(contact.id);
-              return (
-                <button
-                  key={contact.id}
-                  onClick={() => setSearchParams({ contato: contact.id })}
-                  className={cn(
-                    "flex w-full flex-col gap-0.5 border-b px-3 py-2.5 text-left transition-colors hover:bg-accent/50",
-                    selectedContactId === contact.id && "bg-accent",
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-sm font-medium">{contact.name}</span>
-                    {last && (
-                      <span className="flex-shrink-0 text-[10px] text-muted-foreground">
-                        {timeLabel(last.created_at)}
-                      </span>
+            <div className="p-2">
+              {orderedContacts.map((contact) => {
+                const last = lastMessages?.get(contact.id);
+                const isSelected = selectedContactId === contact.id;
+                return (
+                  <button
+                    key={contact.id}
+                    onClick={() => setSearchParams({ contato: contact.id })}
+                    className={cn(
+                      "mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors",
+                      isSelected ? "bg-accent" : "hover:bg-accent/50",
                     )}
-                  </div>
-                  <span className="truncate text-xs text-muted-foreground">
-                    {last ? last.content : "Sem mensagens"}
-                  </span>
-                </button>
-              );
-            })
+                  >
+                    <span
+                      className={cn(
+                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold",
+                        isSelected
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-primary/10 text-primary",
+                      )}
+                    >
+                      {contact.name.trim().charAt(0).toUpperCase() || "?"}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="truncate text-sm font-medium">{contact.name}</span>
+                        {last && (
+                          <span className="tabular shrink-0 text-[10px] text-muted-foreground">
+                            {timeLabel(last.created_at)}
+                          </span>
+                        )}
+                      </span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {last ? last.content : "Sem mensagens"}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           )}
         </ScrollArea>
       </div>
 
       {/* Thread */}
-      <div className="flex flex-1 flex-col rounded-lg border">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-card">
         {!selectedContact ? (
-          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-            Selecione um contato para conversar
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <MessageSquare className="h-7 w-7" />
+            </span>
+            <div>
+              <p className="text-sm font-medium">Selecione um contato</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Escolha uma conversa à esquerda para ver o histórico e responder.
+              </p>
+            </div>
           </div>
         ) : (
           <>
-            <div className="flex items-center justify-between border-b px-4 py-3">
-              <div>
-                <p className="font-semibold">{selectedContact.name}</p>
-                <p className="text-xs text-muted-foreground">{selectedContact.phone ?? "Sem telefone"}</p>
+            <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                  {selectedContact.name.trim().charAt(0).toUpperCase() || "?"}
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate font-semibold leading-tight">{selectedContact.name}</p>
+                  <p className="tabular truncate text-xs text-muted-foreground">
+                    {selectedContact.phone ?? "Sem telefone"}
+                  </p>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 <Button
                   size="sm"
                   variant="outline"
-                  className="gap-1.5"
                   onClick={() => setTemplateOpen(true)}
                   title="Enviar um template aprovado (necessário fora da janela de 24h)"
                 >
-                  <FileText className="h-3.5 w-3.5" />
+                  <FileText />
                   Template
                 </Button>
                 <Button
                   size="sm"
                   variant={selectedContact.ai_paused ? "default" : "outline"}
-                  className="gap-1.5"
                   onClick={() =>
                     company &&
                     void updateContact.mutateAsync({
@@ -183,20 +222,20 @@ export default function Chat() {
                 >
                   {selectedContact.ai_paused ? (
                     <>
-                      <Play className="h-3.5 w-3.5" />
+                      <Play />
                       Reativar IA
                     </>
                   ) : (
                     <>
-                      <Bot className="h-3.5 w-3.5" />
+                      <Bot />
                       Pausar IA
                     </>
                   )}
                 </Button>
               </div>
             </div>
-            <ScrollArea className="flex-1 p-4">
-              <div className="flex min-h-full flex-col justify-end gap-2">
+            <ScrollArea className="flex-1 bg-muted/30 p-4">
+              <div className="flex min-h-full flex-col justify-end gap-1.5">
                 {messages.map((m) => {
                   const isOutgoing = m.sender === "user" || m.sender === "ai";
                   const mediaUrl = m.metadata?.mediaUrl as string | undefined;
@@ -205,27 +244,29 @@ export default function Chat() {
                     <div key={m.id} className={cn("flex", isOutgoing ? "justify-end" : "justify-start")}>
                       <div
                         className={cn(
-                          "max-w-[70%] rounded-2xl px-3.5 py-2 text-sm",
+                          "max-w-[72%] rounded-2xl px-3.5 py-2 text-sm shadow-card",
                           isOutgoing
-                            ? "rounded-br-md bg-primary text-primary-foreground"
-                            : "rounded-bl-md bg-muted",
+                            ? "rounded-br-sm bg-primary text-primary-foreground"
+                            : "rounded-bl-sm border border-border/70 bg-card",
                         )}
                       >
                         {isOutgoing && (
-                          <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-60">
+                          <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wider opacity-70">
                             {m.sender === "ai" ? "IA" : "Você"}
                           </p>
                         )}
                         {mediaUrl && mediaType === "image" && (
-                          <img src={mediaUrl} alt="" className="mb-1 max-h-64 rounded-lg" />
+                          <img src={mediaUrl} alt="" className="mb-1.5 max-h-64 rounded-lg" />
                         )}
                         {mediaUrl && mediaType === "document" && (
                           <a href={mediaUrl} target="_blank" rel="noreferrer" className="mb-1 block underline">
                             Abrir documento
                           </a>
                         )}
-                        <p className="whitespace-pre-wrap break-words">{m.content}</p>
-                        <p className="mt-1 text-[10px] opacity-60">{timeLabel(m.created_at)}</p>
+                        <p className="whitespace-pre-wrap break-words leading-relaxed">{m.content}</p>
+                        <p className="tabular mt-1 text-right text-[10px] opacity-70">
+                          {timeLabel(m.created_at)}
+                        </p>
                       </div>
                     </div>
                   );
@@ -236,7 +277,7 @@ export default function Chat() {
                 <div ref={scrollRef} />
               </div>
             </ScrollArea>
-            <div className="flex gap-2 border-t p-3">
+            <div className="flex items-center gap-2 border-t p-3">
               <Input
                 placeholder="Digite uma mensagem..."
                 value={newMessage}
@@ -244,8 +285,13 @@ export default function Chat() {
                 onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && void handleSend()}
                 disabled={sending}
               />
-              <Button size="icon" onClick={() => void handleSend()} disabled={sending || !newMessage.trim()}>
-                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              <Button
+                size="icon"
+                aria-label="Enviar mensagem"
+                onClick={() => void handleSend()}
+                disabled={sending || !newMessage.trim()}
+              >
+                {sending ? <Loader2 className="animate-spin" /> : <Send />}
               </Button>
             </div>
           </>

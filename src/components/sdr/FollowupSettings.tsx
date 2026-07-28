@@ -17,6 +17,8 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmptyState, LoadingState } from "@/components/ui/empty-state";
+import { cn } from "@/lib/utils";
 
 const TIMEZONES = [
   "America/Sao_Paulo",
@@ -183,19 +185,13 @@ export default function FollowupSettings() {
 
   const saving = saveConfig.isPending || saveSteps.isPending;
 
-  if (configLoading || stepsLoading) {
-    return (
-      <div className="flex justify-center py-10">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
+  if (configLoading || stepsLoading) return <LoadingState label="Carregando cadência..." />;
 
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Como o follow-up funciona</CardTitle>
+          <CardTitle>Como o follow-up funciona</CardTitle>
           <CardDescription>
             Quando um contato para de responder, os passos abaixo são enviados na ordem, respeitando o
             tempo de espera de cada um. Se o contato responder, a cadência zera e recomeça do passo 1 na
@@ -204,7 +200,12 @@ export default function FollowupSettings() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <label className="flex cursor-pointer items-center gap-3 rounded-lg border p-3">
+          <label
+            className={cn(
+              "flex cursor-pointer items-center gap-3 rounded-lg border p-3.5 transition-colors",
+              enabled ? "border-primary/40 bg-primary/5" : "hover:bg-accent/50",
+            )}
+          >
             <Checkbox checked={enabled} onCheckedChange={(v) => setEnabled(v === true)} />
             <div>
               <p className="text-sm font-medium">Ligar follow-up automático</p>
@@ -283,8 +284,8 @@ export default function FollowupSettings() {
 
       <Card>
         <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
-          <div>
-            <CardTitle className="text-base">Cadência</CardTitle>
+          <div className="space-y-1.5">
+            <CardTitle>Cadência</CardTitle>
             <CardDescription>
               O tempo do passo 1 conta a partir da última mensagem da conversa; os demais contam a
               partir do passo anterior.
@@ -293,22 +294,21 @@ export default function FollowupSettings() {
           <Button
             variant="outline"
             size="sm"
-            className="shrink-0 gap-1.5"
+            className="shrink-0"
             onClick={() => setSteps((prev) => [...prev, { ...NEW_STEP }])}
           >
-            <Plus className="h-4 w-4" />
+            <Plus />
             Passo
           </Button>
         </CardHeader>
         <CardContent className="space-y-3">
           {steps.length === 0 ? (
-            <div className="rounded-lg border border-dashed p-8 text-center">
-              <Clock className="mx-auto mb-3 h-7 w-7 text-muted-foreground" />
-              <p className="font-medium">Nenhum passo configurado</p>
-              <p className="text-sm text-muted-foreground">
-                Comece com algo simples: uma mensagem 24h depois e um template 3 dias depois.
-              </p>
-            </div>
+            <EmptyState
+              icon={Clock}
+              title="Nenhum passo configurado"
+              description="Comece com algo simples: uma mensagem 24h depois e um template 3 dias depois."
+              className="py-10"
+            />
           ) : (
             steps.map((step, index) => (
               <FollowupStepCard
@@ -329,17 +329,8 @@ export default function FollowupSettings() {
             <Button onClick={() => void handleSave()} disabled={saving}>
               {saving ? "Salvando..." : "Salvar follow-up"}
             </Button>
-            <Button
-              variant="outline"
-              className="gap-1.5"
-              onClick={() => void handleRunNow()}
-              disabled={runNow.isPending}
-            >
-              {runNow.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Play className="h-4 w-4" />
-              )}
+            <Button variant="outline" onClick={() => void handleRunNow()} disabled={runNow.isPending}>
+              {runNow.isPending ? <Loader2 className="animate-spin" /> : <Play />}
               Executar agora
             </Button>
           </div>

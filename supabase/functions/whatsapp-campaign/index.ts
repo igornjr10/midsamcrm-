@@ -11,6 +11,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { parseWhatsAppApiError } from "../_shared/whatsapp-error.ts";
 import { normalizePhone } from "../_shared/phone.ts";
+import { resolveCompanyId } from "../_shared/company.ts";
 import {
   buildTemplatePayload,
   renderTemplateText,
@@ -64,18 +65,18 @@ Deno.serve(async (req: Request) => {
 
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    const { data: membership } = await supabase
-      .from("company_members")
-      .select("company_id")
-      .eq("user_id", user.id)
-      .limit(1)
-      .maybeSingle();
-    if (!membership?.company_id) return json({ error: "Usuário sem empresa vinculada." }, 400);
-    const companyId = membership.company_id as string;
-
     const url = new URL(req.url);
     const action = url.searchParams.get("action") ?? "dispatch";
     const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+
+    // Empresa ativa no front (super admin pode estar operando a conta de um
+    // cliente); sem company_id, cai na empresa do próprio usuário.
+    const { companyId, error: companyError } = await resolveCompanyId(
+      supabase,
+      user.id,
+      body.company_id as string | undefined,
+    );
+    if (!companyId) return json({ error: companyError }, 403);
 
     // ── create ───────────────────────────────────────────────────────────────
     if (action === "create") {

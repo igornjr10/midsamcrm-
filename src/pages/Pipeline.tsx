@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { GripVertical, Phone } from "lucide-react";
+import { Kanban, Phone } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useContactsQuery, useUpdateContactMutation } from "@/hooks/queries";
-import { PIPELINE_STAGES, type Contact } from "@/lib/types";
+import { PIPELINE_STAGES, getStageTone, type Contact } from "@/lib/types";
 import ContactDetailModal from "@/components/contacts/ContactDetailModal";
+import { PageHeader } from "@/components/layout/PageHeader";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -67,17 +68,23 @@ export default function Pipeline() {
 
   return (
     <div>
-      <h2 className="mb-6 text-2xl font-bold">Pipeline</h2>
+      <PageHeader
+        icon={Kanban}
+        title="Pipeline"
+        description={`${contacts.length} ${contacts.length === 1 ? "contato" : "contatos"} · arraste os cards para mudar de etapa`}
+      />
 
-      <div className="flex gap-4 overflow-x-auto pb-4">
+      <div className="scrollbar-slim flex gap-4 overflow-x-auto pb-4">
         {PIPELINE_STAGES.map((stage) => {
           const stageContacts = byStage.get(stage.id) ?? [];
+          const tone = getStageTone(stage.id);
+          const isDropTarget = dragOverCol === stage.id;
           return (
             <div
               key={stage.id}
               className={cn(
-                "flex min-h-[300px] w-64 flex-shrink-0 flex-col rounded-lg border bg-card/50 transition-colors",
-                dragOverCol === stage.id && "border-primary bg-accent/40",
+                "flex min-h-[420px] w-[272px] flex-shrink-0 flex-col rounded-xl border bg-muted/40 transition-colors",
+                isDropTarget && "border-primary/60 bg-accent/60 ring-2 ring-primary/20",
               )}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -86,44 +93,58 @@ export default function Pipeline() {
               onDragLeave={() => setDragOverCol(null)}
               onDrop={(e) => handleDrop(e, stage.id)}
             >
-              <div className="flex items-center justify-between border-b px-3 py-2">
-                <span className="text-sm font-semibold">{stage.label}</span>
-                <span className="text-xs text-muted-foreground">{stageContacts.length}</span>
+              <div className="flex items-center justify-between gap-2 px-3.5 py-3">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className={cn("h-2 w-2 shrink-0 rounded-full", tone.dot)} />
+                  <span className="truncate text-sm font-semibold">{stage.label}</span>
+                </span>
+                <span className="tabular shrink-0 rounded-full bg-background px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  {stageContacts.length}
+                </span>
               </div>
-              <div className="flex-1 space-y-2 p-2">
-                {stageContacts.map((contact) => (
-                  <div
-                    key={contact.id}
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData("contactId", contact.id);
-                      e.dataTransfer.effectAllowed = "move";
-                      setDraggingId(contact.id);
-                    }}
-                    onDragEnd={() => {
-                      setDraggingId(null);
-                      setDragOverCol(null);
-                    }}
-                    onClick={() => setSelected(contact)}
-                    className={cn(
-                      "cursor-grab rounded-md border bg-card p-2.5 text-sm shadow-sm transition-all hover:shadow active:cursor-grabbing",
-                      draggingId === contact.id && "scale-95 opacity-50",
-                    )}
-                  >
-                    <div className="flex items-start gap-1.5">
-                      <GripVertical className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-muted-foreground/50" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">{contact.name}</p>
-                        {contact.phone && (
-                          <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                            <Phone className="h-3 w-3" />
-                            {contact.phone}
-                          </p>
-                        )}
+
+              <div className="flex-1 space-y-2 px-2 pb-2">
+                {stageContacts.length === 0 ? (
+                  <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-border/70 px-3 text-center text-xs text-muted-foreground">
+                    {isDropTarget ? "Solte aqui" : "Nenhum contato"}
+                  </div>
+                ) : (
+                  stageContacts.map((contact) => (
+                    <div
+                      key={contact.id}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("contactId", contact.id);
+                        e.dataTransfer.effectAllowed = "move";
+                        setDraggingId(contact.id);
+                      }}
+                      onDragEnd={() => {
+                        setDraggingId(null);
+                        setDragOverCol(null);
+                      }}
+                      onClick={() => setSelected(contact)}
+                      className={cn(
+                        "group cursor-grab rounded-lg border border-border/70 bg-card p-3 text-sm shadow-card transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-card-hover active:cursor-grabbing",
+                        draggingId === contact.id && "rotate-1 opacity-40",
+                      )}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                          {contact.name.trim().charAt(0).toUpperCase() || "?"}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium leading-tight">{contact.name}</p>
+                          {contact.phone && (
+                            <p className="tabular mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                              <Phone className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{contact.phone}</span>
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           );

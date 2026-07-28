@@ -21,7 +21,7 @@ export function useWhatsappTemplatesQuery(companyId: string | undefined) {
     queryKey: whatsappTemplatesQueryKey(companyId),
     queryFn: async () => {
       const { data, error } = await supabase.functions.invoke("whatsapp-send?action=list-templates", {
-        body: {},
+        body: { company_id: companyId },
       });
       if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error as string);
@@ -82,6 +82,8 @@ export interface CreateCampaignInput {
   template_body: string;
   variable_map: VariableMap;
   contact_ids: string[];
+  /** Empresa ativa: o super admin pode estar operando a conta de um cliente. */
+  company_id?: string;
 }
 
 export function useCreateCampaignMutation() {
@@ -107,9 +109,9 @@ export interface DispatchResult {
 /** Processa um lote de pendentes; a página chama em loop até done. */
 export function useDispatchCampaignMutation() {
   return useMutation({
-    mutationFn: async (campaignId: string) => {
+    mutationFn: async ({ campaignId, companyId }: { campaignId: string; companyId?: string }) => {
       const { data, error } = await supabase.functions.invoke("whatsapp-campaign?action=dispatch", {
-        body: { campaign_id: campaignId },
+        body: { campaign_id: campaignId, company_id: companyId },
       });
       if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error as string);
@@ -121,9 +123,9 @@ export function useDispatchCampaignMutation() {
 export function useCancelCampaignMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ campaignId }: { campaignId: string; companyId: string }) => {
+    mutationFn: async ({ campaignId, companyId }: { campaignId: string; companyId: string }) => {
       const { data, error } = await supabase.functions.invoke("whatsapp-campaign?action=cancel", {
-        body: { campaign_id: campaignId },
+        body: { campaign_id: campaignId, company_id: companyId },
       });
       if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error as string);

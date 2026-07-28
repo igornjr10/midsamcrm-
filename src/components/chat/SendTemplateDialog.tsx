@@ -84,6 +84,7 @@ export default function SendTemplateDialog({
           body: {
             phone: contact.phone,
             contact_id: contact.id,
+            company_id: company?.id,
             template_name: template.name,
             template_language: template.language,
             template_body: templateBody(template),
@@ -202,11 +203,11 @@ export default function SendTemplateDialog({
           )}
 
           <Button
-            className="w-full gap-2"
+            className="w-full"
             onClick={() => void handleSend()}
             disabled={!template || sending || missingMedia || !contact?.phone}
           >
-            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {sending ? <Loader2 className="animate-spin" /> : <Send />}
             Enviar template
           </Button>
         </div>

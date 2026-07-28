@@ -6,6 +6,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#6FA8DC" />
     <title>Midsam CRM</title>
+    <script>
+      // Aplica o tema antes do primeiro paint para não piscar branco ao carregar no escuro.
+      (function () {
+        try {
+          var stored = localStorage.getItem("midsam-theme");
+          var dark =
+            stored === "dark" ||
+            ((!stored || stored === "system") &&
+              matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.classList.toggle("dark", dark);
+          document.documentElement.style.colorScheme = dark ? "dark" : "light";
+        } catch (e) {
+          /* localStorage bloqueado: segue no tema claro */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

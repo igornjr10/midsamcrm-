@@ -204,3 +204,23 @@ export type PipelineStageId = (typeof PIPELINE_STAGES)[number]["id"];
 export function getStageLabel(stageId: string): string {
   return PIPELINE_STAGES.find((s) => s.id === stageId)?.label ?? stageId;
 }
+
+/**
+ * Cor de cada etapa, do frio (lead novo) ao quente (negociação), com verde/vermelho
+ * reservados pro desfecho. Fica aqui pra coluna do Pipeline e o selo em Contatos
+ * nunca discordarem.
+ */
+const STAGE_TONES: Record<string, { dot: string; badge: string }> = {
+  new: { dot: "bg-slate-400", badge: "border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300" },
+  contacted: { dot: "bg-sky-500", badge: "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300" },
+  proposal: { dot: "bg-indigo-500", badge: "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950 dark:text-indigo-300" },
+  negotiation: { dot: "bg-amber-500", badge: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300" },
+  won: { dot: "bg-emerald-500", badge: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" },
+  lost: { dot: "bg-rose-500", badge: "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-300" },
+};
+
+const FALLBACK_TONE = { dot: "bg-muted-foreground", badge: "border-border text-muted-foreground" };
+
+export function getStageTone(stageId: string) {
+  return STAGE_TONES[stageId] ?? FALLBACK_TONE;
+}

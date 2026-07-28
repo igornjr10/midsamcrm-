@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { isSupabaseConfigured } from "@/integrations/supabase/client";
 import { AuthProvider } from "@/hooks/useAuth";
+import { ThemeProvider } from "@/hooks/useTheme";
 import { Toaster } from "@/components/ui/sonner";
 import AppLayout from "@/components/layout/AppLayout";
 import Login from "@/pages/Login";
@@ -44,25 +45,27 @@ export default function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<Signup />} />
-            <Route element={<AppLayout />}>
-              <Route path="/" element={<Pipeline />} />
-              <Route path="/contatos" element={<Contacts />} />
-              <Route path="/chat" element={<Chat />} />
-              <Route path="/tarefas" element={<Tasks />} />
-              <Route path="/disparos" element={<Campaigns />} />
-              <Route path="/sdr" element={<SdrIa />} />
-              <Route path="/empresas" element={<Companies />} />
-              <Route path="/configuracoes" element={<Settings />} />
-            </Route>
-          </Routes>
-        </BrowserRouter>
-        <Toaster position="top-right" />
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/signup" element={<Signup />} />
+              <Route element={<AppLayout />}>
+                <Route path="/" element={<Pipeline />} />
+                <Route path="/contatos" element={<Contacts />} />
+                <Route path="/chat" element={<Chat />} />
+                <Route path="/tarefas" element={<Tasks />} />
+                <Route path="/disparos" element={<Campaigns />} />
+                <Route path="/sdr" element={<SdrIa />} />
+                <Route path="/empresas" element={<Companies />} />
+                <Route path="/configuracoes" element={<Settings />} />
+              </Route>
+            </Routes>
+          </BrowserRouter>
+          <Toaster position="top-right" />
+        </AuthProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

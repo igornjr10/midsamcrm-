@@ -12,6 +12,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { assertWhatsAppResponse } from "../_shared/whatsapp-error.ts";
 import { normalizePhone } from "../_shared/phone.ts";
+import { resolveCompanyId } from "../_shared/company.ts";
 import {
   buildTemplatePayload,
   renderTemplateText,
@@ -55,15 +56,18 @@ Deno.serve(async (req: Request) => {
 
     const supabaseAdmin = createClient(supabaseUrl, serviceKey);
 
-    // Empresa do usuário logado (primeira membership; MVP = 1 empresa por usuário)
-    const { data: membership } = await supabaseAdmin
-      .from("company_members")
-      .select("company_id")
-      .eq("user_id", user.id)
-      .limit(1)
-      .maybeSingle();
-    if (!membership?.company_id) return json({ error: "Usuário sem empresa vinculada." }, 400);
-    const companyId = membership.company_id as string;
+    const url = new URL(req.url);
+    const action = url.searchParams.get("action") ?? "send-text";
+    const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+
+    // Empresa ativa no front (super admin pode estar operando a conta de um
+    // cliente); sem company_id, cai na empresa do próprio usuário.
+    const { companyId, error: companyError } = await resolveCompanyId(
+      supabaseAdmin,
+      user.id,
+      body.company_id as string | undefined,
+    );
+    if (!companyId) return json({ error: companyError }, 403);
 
     const { data: config } = await supabaseAdmin
       .from("whatsapp_configs")
@@ -73,10 +77,6 @@ Deno.serve(async (req: Request) => {
 
     if (!config) return json({ error: "WhatsApp não configurado. Conecte seu número em Configurações." }, 400);
     if (!config.active) return json({ error: "Configuração de WhatsApp desativada." }, 400);
-
-    const url = new URL(req.url);
-    const action = url.searchParams.get("action") ?? "send-text";
-    const body = await req.json().catch(() => ({})) as Record<string, unknown>;
 
     const graphBase = resolveApiBase(config.api_base_url as string);
     const graphHeaders = {

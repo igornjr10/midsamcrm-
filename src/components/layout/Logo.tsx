@@ -5,17 +5,18 @@ export function LogoMark({ className }: { className?: string }) {
     <svg viewBox="0 0 64 64" className={cn("h-9 w-9", className)} aria-hidden="true">
       <defs>
         <linearGradient id="midsam-spark" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#7FB3DF" />
-          <stop offset="100%" stopColor="#5A95CE" />
+          <stop offset="0%" stopColor="hsl(var(--primary))" />
+          <stop offset="100%" stopColor="hsl(var(--primary) / 0.72)" />
         </linearGradient>
       </defs>
+      {/* Órbitas cruzadas: usam a cor primária do tema, então acompanham claro/escuro */}
       <ellipse
         cx="32"
         cy="32"
         rx="29"
         ry="13.5"
         fill="none"
-        stroke="#EDF2F7"
+        stroke="hsl(var(--primary) / 0.22)"
         strokeWidth="5.4"
         transform="rotate(40 32 32)"
       />
@@ -25,7 +26,7 @@ export function LogoMark({ className }: { className?: string }) {
         rx="29"
         ry="13.5"
         fill="none"
-        stroke="#A3C8E8"
+        stroke="hsl(var(--primary) / 0.45)"
         strokeWidth="5.4"
         transform="rotate(-40 32 32)"
       />
@@ -40,8 +41,10 @@ export function LogoMark({ className }: { className?: string }) {
 export function Logo({ className }: { className?: string }) {
   return (
     <div className={cn("flex items-center gap-2.5", className)}>
-      <LogoMark />
-      <span className="text-lg font-bold tracking-tight">Midsam CRM</span>
+      <LogoMark className="h-8 w-8" />
+      <span className="text-base font-bold tracking-tight">
+        Midsam <span className="text-primary">CRM</span>
+      </span>
     </div>
   );
 }

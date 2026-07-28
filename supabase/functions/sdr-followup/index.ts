@@ -19,6 +19,7 @@
 //   $$);
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { parseWhatsAppApiError } from "../_shared/whatsapp-error.ts";
+import { resolveCompanyId } from "../_shared/company.ts";
 import { buildTemplatePayload, renderTemplateText, type VariableMap } from "../_shared/whatsapp-template.ts";
 
 const corsHeaders = {
@@ -428,18 +429,18 @@ Deno.serve(async (req: Request) => {
       const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
       if (authError || !user) return json({ error: "Unauthorized" }, 401);
 
-      const { data: membership } = await supabase
-        .from("company_members")
-        .select("company_id")
-        .eq("user_id", user.id)
-        .limit(1)
-        .maybeSingle();
-      if (!membership?.company_id) return json({ error: "Usuário sem empresa vinculada." }, 400);
+      const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+      const { companyId, error: companyError } = await resolveCompanyId(
+        supabase,
+        user.id,
+        body.company_id as string | undefined,
+      );
+      if (!companyId) return json({ error: companyError }, 403);
 
       const { data } = await supabase
         .from("ai_configs")
         .select(selectFields)
-        .eq("company_id", membership.company_id as string)
+        .eq("company_id", companyId)
         .maybeSingle();
       if (!data) {
         return json({ error: "Configure o SDR IA antes de rodar o follow-up." }, 400);

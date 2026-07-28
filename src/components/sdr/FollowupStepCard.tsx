@@ -17,6 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 const KIND_OPTIONS: Array<{ value: FollowupKind; label: string; hint: string }> = [
   {
@@ -120,11 +121,16 @@ export default function FollowupStepCard({
   };
 
   return (
-    <div className="space-y-4 rounded-lg border p-4">
+    <div
+      className={cn(
+        "space-y-4 rounded-xl border bg-card p-4 shadow-card transition-opacity",
+        !step.active && "opacity-70",
+      )}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="gap-1.5">
-            <Icon className="h-3.5 w-3.5" />
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary">
+            <Icon />
             Passo {index + 1}
           </Badge>
           <span className="text-sm text-muted-foreground">
@@ -136,33 +142,31 @@ export default function FollowupStepCard({
         </div>
         <div className="flex items-center gap-1">
           <Button
-            size="icon"
+            size="icon-sm"
             variant="ghost"
-            className="h-8 w-8"
             disabled={index === 0}
             onClick={() => onMove(-1)}
             aria-label="Subir passo"
           >
-            <ArrowUp className="h-4 w-4" />
+            <ArrowUp />
           </Button>
           <Button
-            size="icon"
+            size="icon-sm"
             variant="ghost"
-            className="h-8 w-8"
             disabled={index === total - 1}
             onClick={() => onMove(1)}
             aria-label="Descer passo"
           >
-            <ArrowDown className="h-4 w-4" />
+            <ArrowDown />
           </Button>
           <Button
-            size="icon"
+            size="icon-sm"
             variant="ghost"
-            className="h-8 w-8 text-destructive"
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
             onClick={onRemove}
             aria-label="Remover passo"
           >
-            <Trash2 className="h-4 w-4" />
+            <Trash2 />
           </Button>
         </div>
       </div>

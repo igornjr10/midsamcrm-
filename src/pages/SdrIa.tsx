@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Bot, Loader2 } from "lucide-react";
+import { Bot, CalendarClock, History, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useAiConfigQuery, useSaveAiConfigMutation } from "@/hooks/queries";
 import FollowupSettings from "@/components/sdr/FollowupSettings";
 import FollowupHistory from "@/components/sdr/FollowupHistory";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 
 const DEFAULT_PROMPT =
   "Você é um atendente comercial simpático e objetivo da empresa. Responda em português do Brasil, " +
@@ -66,29 +68,43 @@ export default function SdrIa() {
   };
 
   return (
-    <div className="max-w-3xl space-y-6">
-      <div className="flex flex-wrap items-center gap-2">
-        <Bot className="h-6 w-6 text-primary" />
-        <h2 className="text-2xl font-bold">SDR IA</h2>
-        {config?.enabled && <Badge className="bg-green-600 text-white">Ativo</Badge>}
-        {config?.followup_enabled && (
-          <Badge variant="outline" className="border-primary/40 text-primary">
-            Follow-up ligado
-          </Badge>
-        )}
-      </div>
+    <div className="max-w-3xl">
+      <PageHeader
+        icon={Bot}
+        title="SDR IA"
+        description="Atendimento e follow-up automáticos no WhatsApp"
+        badges={
+          <>
+            {config?.enabled ? (
+              <Badge variant="success">Ativo</Badge>
+            ) : (
+              <Badge variant="outline">Desligado</Badge>
+            )}
+            {config?.followup_enabled && <Badge variant="secondary">Follow-up ligado</Badge>}
+          </>
+        }
+      />
 
       <Tabs defaultValue="agente">
         <TabsList>
-          <TabsTrigger value="agente">Agente</TabsTrigger>
-          <TabsTrigger value="followup">Follow-up</TabsTrigger>
-          <TabsTrigger value="historico">Histórico</TabsTrigger>
+          <TabsTrigger value="agente">
+            <Sparkles />
+            Agente
+          </TabsTrigger>
+          <TabsTrigger value="followup">
+            <CalendarClock />
+            Follow-up
+          </TabsTrigger>
+          <TabsTrigger value="historico">
+            <History />
+            Histórico
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="agente" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Atendimento automático de leads</CardTitle>
+              <CardTitle>Atendimento automático de leads</CardTitle>
               <CardDescription>
                 Quando ligado, toda mensagem de texto recebida no WhatsApp é respondida automaticamente
                 pela IA, seguindo o prompt abaixo. Você pode pausar a IA em qualquer conversa individual
@@ -102,7 +118,12 @@ export default function SdrIa() {
                 </div>
               ) : (
                 <>
-                  <label className="flex cursor-pointer items-center gap-3 rounded-lg border p-3">
+                  <label
+                    className={cn(
+                      "flex cursor-pointer items-center gap-3 rounded-lg border p-3.5 transition-colors",
+                      enabled ? "border-primary/40 bg-primary/5" : "hover:bg-accent/50",
+                    )}
+                  >
                     <Checkbox checked={enabled} onCheckedChange={(v) => setEnabled(v === true)} />
                     <div>
                       <p className="text-sm font-medium">Ligar SDR IA</p>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Copy, CheckCircle, Loader2, History } from "lucide-react";
+import { Copy, CheckCircle, Loader2, History, Settings as SettingsIcon } from "lucide-react";
 import { toast } from "sonner";
 import { supabase, SUPABASE_URL } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/layout/PageHeader";
 
 const DATAFY_API_BASE = "https://cloud.datafyapi.com.br/v1";
 
@@ -75,7 +76,7 @@ export default function Settings() {
     setStatus(null);
     try {
       const { data, error } = await supabase.functions.invoke("whatsapp-send?action=get-status", {
-        body: {},
+        body: { company_id: company?.id },
       });
       if (error) throw new Error(error.message);
       setStatus(data as Record<string, string>);
@@ -90,7 +91,7 @@ export default function Settings() {
     setSyncing(true);
     try {
       const { data, error } = await supabase.functions.invoke("whatsapp-send?action=sync-history", {
-        body: {},
+        body: { company_id: company?.id },
       });
       if (error || (data && data.success === false)) {
         throw new Error((data?.results?.[0]?.error as string) || error?.message || "Falha ao sincronizar");
@@ -104,34 +105,49 @@ export default function Settings() {
   };
 
   return (
-    <div className="max-w-2xl space-y-6">
-      <h2 className="text-2xl font-bold">Configurações</h2>
+    <div className="max-w-2xl">
+      <PageHeader
+        icon={SettingsIcon}
+        title="Configurações"
+        description="Conexão do WhatsApp e integrações da empresa"
+      />
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader>
-          <CardTitle className="text-base">URL do Webhook</CardTitle>
+          <CardTitle>URL do Webhook</CardTitle>
           <CardDescription>
             Cole esta URL (e o Verify Token abaixo) na configuração de webhook do seu número no painel do
             Datafy. Todas as mensagens recebidas passarão a aparecer no Chat.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
           <div className="flex gap-2">
             <Input readOnly value={webhookUrl} className="font-mono text-xs" />
-            <Button size="icon" variant="outline" onClick={() => copyToClipboard(webhookUrl)}>
-              <Copy className="h-4 w-4" />
+            <Button
+              size="icon"
+              variant="outline"
+              aria-label="Copiar URL do webhook"
+              onClick={() => copyToClipboard(webhookUrl)}
+            >
+              <Copy />
             </Button>
           </div>
+          <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
+            Marque os campos <span className="font-mono text-foreground">messages</span> e{" "}
+            <span className="font-mono text-foreground">message_echoes</span> na assinatura do webhook.
+            Sem o <span className="font-mono text-foreground">message_echoes</span>, o que a sua equipe
+            responde pelo celular não aparece aqui no Chat — só o lado do cliente.
+          </p>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
+          <CardTitle className="flex flex-wrap items-center gap-2">
             Conexão WhatsApp (Datafy)
             {config?.active && (
-              <Badge variant="outline" className="gap-1 border-green-500/40 text-green-600">
-                <CheckCircle className="h-3 w-3" />
+              <Badge variant="success">
+                <CheckCircle />
                 Configurado
               </Badge>
             )}
@@ -174,8 +190,13 @@ export default function Settings() {
                 <Label>Verify Token (webhook)</Label>
                 <div className="flex gap-2">
                   <Input readOnly value={verifyToken} className="font-mono text-xs" />
-                  <Button size="icon" variant="outline" onClick={() => copyToClipboard(verifyToken)}>
-                    <Copy className="h-4 w-4" />
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    aria-label="Copiar verify token"
+                    onClick={() => copyToClipboard(verifyToken)}
+                  >
+                    <Copy />
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -189,13 +210,13 @@ export default function Settings() {
                 </Button>
                 {config && (
                   <Button variant="outline" onClick={() => void checkStatus()} disabled={statusLoading}>
-                    {statusLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    {statusLoading && <Loader2 className="animate-spin" />}
                     Verificar status
                   </Button>
                 )}
                 {config && (
-                  <Button variant="outline" className="gap-1.5" onClick={() => void syncHistory()} disabled={syncing}>
-                    {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <History className="h-4 w-4" />}
+                  <Button variant="outline" onClick={() => void syncHistory()} disabled={syncing}>
+                    {syncing ? <Loader2 className="animate-spin" /> : <History />}
                     Sincronizar histórico
                   </Button>
                 )}
@@ -210,12 +231,19 @@ export default function Settings() {
               )}
 
               {status && (
-                <div className="rounded-lg border bg-muted/30 p-3 text-sm">
-                  <p>Número: {status.display_phone_number ?? "—"}</p>
-                  <p>Nome verificado: {status.verified_name ?? "—"}</p>
-                  <p>Qualidade: {status.quality_rating ?? "—"}</p>
-                  <p>Status: {status.status ?? "—"}</p>
-                </div>
+                <dl className="grid gap-x-4 gap-y-2 rounded-lg border bg-muted/40 p-4 text-sm sm:grid-cols-2">
+                  {[
+                    ["Número", status.display_phone_number],
+                    ["Nome verificado", status.verified_name],
+                    ["Qualidade", status.quality_rating],
+                    ["Status", status.status],
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
+                      <dd className="mt-0.5 font-medium">{value ?? "—"}</dd>
+                    </div>
+                  ))}
+                </dl>
               )}
             </>
           )}
