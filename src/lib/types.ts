@@ -69,8 +69,69 @@ export interface AiConfig {
   system_prompt: string | null;
   model: string;
   openai_api_key: string | null;
+  // Follow-up automático (cadência de cobrança de quem parou de responder).
+  followup_enabled: boolean;
+  followup_timezone: string;
+  followup_window_start: number;
+  followup_window_end: number;
+  followup_skip_weekends: boolean;
+  followup_only_open_stages: boolean;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Passo da cadência de follow-up.
+ * - text     -> envia `message` como está ({{nome}}, {{primeiro_nome}})
+ * - ai       -> o agente escreve seguindo `message` como instrução
+ * - template -> template aprovado, único que funciona fora das 24h
+ */
+export type FollowupKind = "text" | "ai" | "template";
+
+export interface FollowupStep {
+  id: string;
+  company_id: string;
+  step_order: number;
+  delay_hours: number;
+  kind: FollowupKind;
+  message: string | null;
+  template_name: string | null;
+  template_language: string;
+  template_body: string | null;
+  variable_map: VariableMap;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Passo em edição na tela (ainda sem id/company_id no banco). */
+export type FollowupStepDraft = Pick<
+  FollowupStep,
+  | "delay_hours"
+  | "kind"
+  | "message"
+  | "template_name"
+  | "template_language"
+  | "template_body"
+  | "variable_map"
+  | "active"
+>;
+
+export type FollowupLogStatus = "sent" | "failed" | "skipped";
+
+export interface FollowupLog {
+  id: string;
+  company_id: string;
+  contact_id: string;
+  step_id: string | null;
+  step_order: number;
+  kind: FollowupKind;
+  status: FollowupLogStatus;
+  content: string | null;
+  message_ref: string | null;
+  error: string | null;
+  created_at: string;
+  contacts: { id: string; name: string; phone: string | null } | null;
 }
 
 // Fonte de cada variável ({{1}}, {{2}}...) de um template aprovado.

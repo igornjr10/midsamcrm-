@@ -24,16 +24,24 @@ export function useAiConfigQuery(companyId: string | undefined) {
   });
 }
 
+export interface SaveAiConfigInput {
+  company_id: string;
+  enabled?: boolean;
+  system_prompt?: string | null;
+  model?: string;
+  openai_api_key?: string | null;
+  followup_enabled?: boolean;
+  followup_timezone?: string;
+  followup_window_start?: number;
+  followup_window_end?: number;
+  followup_skip_weekends?: boolean;
+  followup_only_open_stages?: boolean;
+}
+
 export function useSaveAiConfigMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: {
-      company_id: string;
-      enabled: boolean;
-      system_prompt?: string | null;
-      model?: string;
-      openai_api_key?: string | null;
-    }) => {
+    mutationFn: async (payload: SaveAiConfigInput) => {
       const { error } = await supabase
         .from("ai_configs")
         .upsert(payload, { onConflict: "company_id" });
