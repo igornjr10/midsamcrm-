@@ -179,6 +179,49 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
             <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
 
+          <div className="grid gap-2 rounded-lg border bg-muted/40 p-3 text-xs sm:grid-cols-3">
+            <div>
+              <p className="text-muted-foreground">Entrou em contato</p>
+              <p className="tabular mt-0.5 font-medium">
+                {new Date(contact.created_at).toLocaleDateString("pt-BR")}
+              </p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Última interação</p>
+              <p className="tabular mt-0.5 font-medium">
+                {contact.last_interaction_at
+                  ? new Date(contact.last_interaction_at).toLocaleString("pt-BR", {
+                      day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+                    })
+                  : "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Última fala do lead</p>
+              <p className="tabular mt-0.5 font-medium">
+                {contact.last_inbound_at
+                  ? new Date(contact.last_inbound_at).toLocaleString("pt-BR", {
+                      day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+                    })
+                  : "—"}
+              </p>
+            </div>
+          </div>
+
+          {contact.closing_signal_at && (
+            <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm dark:border-emerald-800 dark:bg-emerald-950">
+              <p className="font-medium text-emerald-800 dark:text-emerald-300">
+                Sinal de fechamento · {contact.closing_signal_label ?? "detectado"} ·{" "}
+                {new Date(contact.closing_signal_at).toLocaleDateString("pt-BR")}
+              </p>
+              {contact.closing_signal_excerpt && (
+                <p className="mt-1 text-emerald-700 dark:text-emerald-400">
+                  “{contact.closing_signal_excerpt}”
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="rounded-lg border bg-muted/40 p-3">
             <p className="mb-2 text-sm font-medium">Novo compromisso com este contato</p>
             <div className="flex flex-col gap-2 sm:flex-row">

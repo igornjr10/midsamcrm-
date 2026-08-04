@@ -3,7 +3,10 @@ import { AlertCircle, Loader2, Search, Send } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useContactsQuery, useWhatsappTemplatesQuery, usePipelineStagesQuery } from "@/hooks/queries";
 import type { CreateCampaignInput } from "@/hooks/queries";
-import { getStageLabel, getStageTone, type Contact, type VariableMap, type VariableSource } from "@/lib/types";
+import {
+  CONTACT_FILTERS, getStageLabel, getStageTone, matchesContactFilter,
+  type Contact, type ContactFilter, type VariableMap, type VariableSource,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
   bodyPlaceholders,
@@ -55,6 +58,7 @@ export default function NewCampaignDialog({
   const [mediaUrl, setMediaUrl] = useState("");
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
+  const [smartFilter, setSmartFilter] = useState<ContactFilter>("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const template = useMemo<WhatsappTemplate | undefined>(
@@ -70,10 +74,11 @@ export default function NewCampaignDialog({
     const term = search.trim().toLowerCase();
     return eligible.filter((c) => {
       if (stageFilter !== "all" && c.stage !== stageFilter) return false;
+      if (!matchesContactFilter(c, smartFilter)) return false;
       if (!term) return true;
       return c.name.toLowerCase().includes(term) || (c.phone ?? "").includes(term);
     });
-  }, [eligible, search, stageFilter]);
+  }, [eligible, search, stageFilter, smartFilter]);
 
   useEffect(() => {
     if (!template) return;
@@ -300,6 +305,18 @@ export default function NewCampaignDialog({
                   {stages.map((s) => (
                     <SelectItem key={s.id} value={s.key}>
                       {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={smartFilter} onValueChange={(v) => setSmartFilter(v as ContactFilter)}>
+                <SelectTrigger className="sm:w-56">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CONTACT_FILTERS.map((f) => (
+                    <SelectItem key={f.id} value={f.id}>
+                      {f.label}
                     </SelectItem>
                   ))}
                 </SelectContent>

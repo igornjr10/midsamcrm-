@@ -1,9 +1,12 @@
 import { useMemo, useState } from "react";
-import { Plus, Search, Users } from "lucide-react";
+import { BadgeCheck, Plus, Search, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useContactsQuery, useCreateContactMutation, usePipelineStagesQuery } from "@/hooks/queries";
-import { getStageLabel, getStageTone, type Contact } from "@/lib/types";
+import {
+  CONTACT_FILTERS, getStageLabel, getStageTone, matchesContactFilter,
+  type Contact, type ContactFilter,
+} from "@/lib/types";
 import ContactDetailModal from "@/components/contacts/ContactDetailModal";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -16,6 +19,16 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
+/** "hoje", "há 3 dias", "há 2 meses" — o que importa no follow-up é a distância. */
+function relativeDay(iso: string): string {
+  const dias = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  if (dias <= 0) return "hoje";
+  if (dias === 1) return "ontem";
+  if (dias < 30) return `há ${dias} dias`;
+  const meses = Math.floor(dias / 30);
+  return meses === 1 ? "há 1 mês" : `há ${meses} meses`;
+}
+
 export default function Contacts() {
   const { user, company } = useAuth();
   const { data: contacts = [], isPending } = useContactsQuery(company?.id);
@@ -24,6 +37,7 @@ export default function Contacts() {
 
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
+  const [smartFilter, setSmartFilter] = useState<ContactFilter>("all");
   const [selected, setSelected] = useState<Contact | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ name: "", phone: "", email: "" });
@@ -32,6 +46,7 @@ export default function Contacts() {
     const term = search.trim().toLowerCase();
     return contacts.filter((c) => {
       if (stageFilter !== "all" && c.stage !== stageFilter) return false;
+      if (!matchesContactFilter(c, smartFilter)) return false;
       if (!term) return true;
       return (
         c.name.toLowerCase().includes(term) ||
@@ -39,7 +54,9 @@ export default function Contacts() {
         c.email?.toLowerCase().includes(term)
       );
     });
-  }, [contacts, search, stageFilter]);
+  }, [contacts, search, stageFilter, smartFilter]);
+
+  const smartFilterHint = CONTACT_FILTERS.find((f) => f.id === smartFilter)?.hint;
 
   const handleCreate = async () => {
     if (!user || !company || !form.name.trim()) {
@@ -130,7 +147,23 @@ export default function Contacts() {
             ))}
           </SelectContent>
         </Select>
+        <Select value={smartFilter} onValueChange={(v) => setSmartFilter(v as ContactFilter)}>
+          <SelectTrigger className="sm:w-64">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CONTACT_FILTERS.map((f) => (
+              <SelectItem key={f.id} value={f.id}>
+                {f.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
+
+      {smartFilterHint && (
+        <p className="-mt-2 mb-4 text-xs text-muted-foreground">{smartFilterHint}</p>
+      )}
 
       <div className="overflow-hidden rounded-xl border bg-card shadow-card">
         <div className="scrollbar-slim overflow-x-auto">
@@ -141,19 +174,20 @@ export default function Contacts() {
                 <th className="px-4 py-3 font-semibold">Telefone</th>
                 <th className="px-4 py-3 font-semibold">E-mail</th>
                 <th className="px-4 py-3 font-semibold">Etapa</th>
-                <th className="px-4 py-3 font-semibold">Criado em</th>
+                <th className="px-4 py-3 font-semibold">Entrou em</th>
+                <th className="px-4 py-3 font-semibold">Última interação</th>
               </tr>
             </thead>
             <tbody>
               {isPending ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
                     Carregando...
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center">
+                  <td colSpan={6} className="px-4 py-12 text-center">
                     <Users className="mx-auto mb-3 h-8 w-8 text-muted-foreground/60" />
                     <p className="text-sm font-medium">Nenhum contato encontrado</p>
                     <p className="mt-1 text-sm text-muted-foreground">
@@ -176,6 +210,16 @@ export default function Contacts() {
                           {contact.name.trim().charAt(0).toUpperCase() || "?"}
                         </span>
                         <span className="font-medium">{contact.name}</span>
+                        {contact.closing_signal_at && (
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                            title={contact.closing_signal_excerpt ?? undefined}
+                          >
+                            <BadgeCheck className="mr-1 h-3 w-3" />
+                            {contact.closing_signal_label ?? "Fechou"}
+                          </Badge>
+                        )}
                       </span>
                     </td>
                     <td className="tabular px-4 py-3">{contact.phone ?? "—"}</td>
@@ -187,6 +231,9 @@ export default function Contacts() {
                     </td>
                     <td className="tabular px-4 py-3 text-muted-foreground">
                       {new Date(contact.created_at).toLocaleDateString("pt-BR")}
+                    </td>
+                    <td className="tabular px-4 py-3 text-muted-foreground">
+                      {contact.last_interaction_at ? relativeDay(contact.last_interaction_at) : "—"}
                     </td>
                   </tr>
                 ))

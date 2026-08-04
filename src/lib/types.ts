@@ -15,8 +15,51 @@ export interface Contact {
   loss_reason: string | null;
   notes: string | null;
   ai_paused: boolean;
+  /** Última mensagem de qualquer lado. Mantida por trigger em conversations. */
+  last_interaction_at: string | null;
+  /** Última mensagem recebida do lead. */
+  last_inbound_at: string | null;
+  /** Última mensagem enviada por atendente ou IA. */
+  last_outbound_at: string | null;
+  /** Quando o contato deu sinal de que fechou (pix, comprovante, "pode emitir"...). */
+  closing_signal_at: string | null;
+  closing_signal_label: string | null;
+  closing_signal_excerpt: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** Recortes de contato que viram lista de disparo. */
+export type ContactFilter = "all" | "closing" | "waiting" | "cold" | "no_reply";
+
+export const CONTACT_FILTERS: Array<{ id: ContactFilter; label: string; hint: string }> = [
+  { id: "all", label: "Todos os contatos", hint: "" },
+  { id: "closing", label: "Deram sinal de fechamento", hint: "Falaram em pix, comprovante, entrada, pode emitir..." },
+  { id: "waiting", label: "Aguardando nossa resposta", hint: "A última mensagem é do lead" },
+  { id: "no_reply", label: "Sem resposta há 3+ dias", hint: "O lead falou, ninguém respondeu desde então" },
+  { id: "cold", label: "Sem interação há 30+ dias", hint: "Candidatos a reativação" },
+];
+
+const DAY = 24 * 60 * 60 * 1000;
+
+/** Mesma regra em Contatos e no disparo, para as duas listas nunca divergirem. */
+export function matchesContactFilter(contact: Contact, filter: ContactFilter, now = Date.now()): boolean {
+  const inbound = contact.last_inbound_at ? new Date(contact.last_inbound_at).getTime() : null;
+  const outbound = contact.last_outbound_at ? new Date(contact.last_outbound_at).getTime() : null;
+  const last = contact.last_interaction_at ? new Date(contact.last_interaction_at).getTime() : null;
+
+  switch (filter) {
+    case "closing":
+      return !!contact.closing_signal_at;
+    case "waiting":
+      return inbound !== null && (outbound === null || inbound > outbound);
+    case "no_reply":
+      return inbound !== null && (outbound === null || inbound > outbound) && now - inbound >= 3 * DAY;
+    case "cold":
+      return last !== null && now - last >= 30 * DAY;
+    default:
+      return true;
+  }
 }
 
 export interface Conversation {
