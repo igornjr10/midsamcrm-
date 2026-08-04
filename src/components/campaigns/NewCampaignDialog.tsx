@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Loader2, Search, Send } from "lucide-react";
+import { AlertCircle, Loader2, Search, Send, Sparkles } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useContactsQuery, useWhatsappTemplatesQuery, usePipelineStagesQuery } from "@/hooks/queries";
 import type { CreateCampaignInput } from "@/hooks/queries";
@@ -7,6 +7,7 @@ import {
   CONTACT_FILTERS, getStageLabel, getStageTone, matchesContactFilter,
   type Contact, type ContactFilter, type VariableMap, type VariableSource,
 } from "@/lib/types";
+import { FLOW_PRESETS, findFlowPreset } from "@/lib/flows";
 import { cn } from "@/lib/utils";
 import {
   bodyPlaceholders,
@@ -59,7 +60,21 @@ export default function NewCampaignDialog({
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
   const [smartFilter, setSmartFilter] = useState<ContactFilter>("all");
+  const [flowId, setFlowId] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const activeFlow = findFlowPreset(flowId);
+
+  // O fluxo só monta o público; quem confirma a seleção continua sendo o usuário.
+  const applyFlow = (id: string) => {
+    const preset = findFlowPreset(id);
+    if (!preset) return;
+    setFlowId(id);
+    setSmartFilter(preset.audience);
+    setStageFilter("all");
+    setSelectedIds(new Set());
+    if (!name.trim()) setName(preset.name);
+  };
 
   const template = useMemo<WhatsappTemplate | undefined>(
     () => templates.find((t) => t.name === templateName),
@@ -284,6 +299,41 @@ export default function NewCampaignDialog({
               <span className="text-xs text-muted-foreground">
                 {selectedIds.size} selecionado{selectedIds.size === 1 ? "" : "s"}
               </span>
+            </div>
+
+            {/* Fluxo pronto: escolhe o público de uma vez e sugere o texto. */}
+            <div className="rounded-lg border bg-muted/40 p-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <span className="flex items-center gap-1.5 text-sm font-medium">
+                  <Sparkles className="h-4 w-4" />
+                  Fluxo pronto
+                </span>
+                <Select value={flowId} onValueChange={applyFlow}>
+                  <SelectTrigger className="h-9 flex-1">
+                    <SelectValue placeholder="Escolher um público pronto..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FLOW_PRESETS.map((f) => (
+                      <SelectItem key={f.id} value={f.id}>
+                        {f.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {activeFlow && (
+                <div className="mt-2 space-y-1.5 text-xs">
+                  <p className="text-muted-foreground">{activeFlow.description}</p>
+                  <p className="rounded-md border bg-background p-2">
+                    <span className="font-medium">Mensagem sugerida:</span>{" "}
+                    {activeFlow.steps[0]?.message}
+                  </p>
+                  <p className="text-muted-foreground">
+                    O disparo em massa exige template aprovado na Meta — use esse texto como base
+                    ao cadastrar o template.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row">

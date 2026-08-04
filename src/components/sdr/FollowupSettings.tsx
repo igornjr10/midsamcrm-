@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Clock, Loader2, Play, Plus } from "lucide-react";
+import { Clock, Loader2, Play, Plus, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -11,6 +11,7 @@ import {
   useWhatsappTemplatesQuery,
 } from "@/hooks/queries";
 import type { AiConfig, FollowupStep, FollowupStepDraft } from "@/lib/types";
+import { FLOW_PRESETS, findFlowPreset } from "@/lib/flows";
 import FollowupStepCard from "@/components/sdr/FollowupStepCard";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -106,6 +107,19 @@ export default function FollowupSettings() {
     if (!savedSteps) return;
     setSteps(savedSteps.map(toDraft));
   }, [savedSteps]);
+
+  // Carrega os passos do fluxo no editor sem salvar: substituir a cadência
+  // gravada num clique, sem o usuário ver o que vem, seria destrutivo demais.
+  const applyPreset = (presetId: string) => {
+    const preset = findFlowPreset(presetId);
+    if (!preset) return;
+    if (steps.length > 0 && !window.confirm(`Substituir os ${steps.length} passos atuais pelo fluxo "${preset.name}"?`)) {
+      return;
+    }
+    setSteps(preset.steps.map((s) => ({ ...s })));
+    setOnlyOpenStages(preset.openOnly);
+    toast.info(`Fluxo "${preset.name}" carregado. Revise e clique em salvar.`);
+  };
 
   const updateStep = (index: number, next: FollowupStepDraft) => {
     setSteps((prev) => prev.map((s, i) => (i === index ? next : s)));
@@ -291,15 +305,36 @@ export default function FollowupSettings() {
               partir do passo anterior.
             </CardDescription>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="shrink-0"
-            onClick={() => setSteps((prev) => [...prev, { ...NEW_STEP }])}
-          >
-            <Plus />
-            Passo
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <Select value="" onValueChange={applyPreset}>
+              <SelectTrigger className="h-9 w-44" aria-label="Usar fluxo pronto">
+                <span className="flex items-center gap-1.5 text-sm">
+                  <Sparkles className="h-4 w-4" />
+                  Fluxo pronto
+                </span>
+              </SelectTrigger>
+              <SelectContent className="max-w-xs">
+                {FLOW_PRESETS.map((preset) => (
+                  <SelectItem key={preset.id} value={preset.id}>
+                    <span className="block">
+                      <span className="font-medium">{preset.name}</span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                        {preset.steps.length} {preset.steps.length === 1 ? "passo" : "passos"}
+                      </span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSteps((prev) => [...prev, { ...NEW_STEP }])}
+            >
+              <Plus />
+              Passo
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
           {steps.length === 0 ? (
