@@ -20,7 +20,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { parseWhatsAppApiError } from "../_shared/whatsapp-error.ts";
 import { resolveCompanyId } from "../_shared/company.ts";
+import { todayBrief } from "../_shared/date.ts";
 import { buildTemplatePayload, renderTemplateText, type VariableMap } from "../_shared/whatsapp-template.ts";
+
+// Sem os genéricos explícitos o ReturnType resolve para os defaults (never) e
+// não aceita o cliente real.
+type Db = ReturnType<typeof createClient<any, "public", any>>;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -165,7 +170,7 @@ async function sendText(
 
 /** Texto do follow-up escrito pelo agente, com o histórico recente como contexto. */
 async function writeAiMessage(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Db,
   aiConfig: AiConfig,
   contact: Candidate,
   instruction: string,
@@ -186,6 +191,7 @@ async function writeAiMessage(
       content:
         (aiConfig.system_prompt?.trim() ||
           "Você é um atendente comercial simpático e objetivo. Responda em português do Brasil, em mensagens curtas de WhatsApp.") +
+        `\n\n${todayBrief(aiConfig.followup_timezone ?? undefined)} Use sempre o ano corrente ao falar de datas.` +
         "\n\nAgora você vai escrever uma mensagem de follow-up: o cliente parou de responder. " +
         "Escreva APENAS o texto da mensagem, curto, natural e sem saudação formal repetida. " +
         "Não invente preços, prazos ou condições.",
@@ -221,7 +227,7 @@ async function writeAiMessage(
 }
 
 async function runCompany(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Db,
   aiConfig: AiConfig,
   deadline: number,
 ): Promise<CompanyResult> {

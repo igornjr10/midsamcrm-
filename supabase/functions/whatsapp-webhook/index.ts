@@ -6,6 +6,7 @@
 // Todas as empresas apontam o webhook do Datafy para esta mesma URL; a empresa
 // dona da mensagem é resolvida pelo metadata.phone_number_id do payload.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { CONSULTAR_DATA_TOOL, describeDate, todayBrief } from "../_shared/date.ts";
 
 // Cliente com service role. Sem os genéricos explícitos o ReturnType resolve
 // para os defaults (never) e não aceita o cliente real.
@@ -67,6 +68,8 @@ type AiConfig = {
   system_prompt: string | null;
   model: string;
   openai_api_key: string | null;
+  /** Fuso da empresa: define que dia é "hoje" para a IA. */
+  followup_timezone: string | null;
 };
 
 async function updateDeliveryStatus(
@@ -459,7 +462,7 @@ type LlmResponse = {
   choices?: Array<{
     message?: {
       content?: string;
-      tool_calls?: Array<{ function?: { name?: string; arguments?: string } }>;
+      tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }>;
     };
   }>;
 };
@@ -578,12 +581,16 @@ async function maybeAiReply(
       "\nEnvie um arquivo só quando ele responder o que o lead pediu. Nunca invente arquivo que não esteja nesta lista."
     : "";
 
+  const timezone = aiConfig.followup_timezone?.trim() || "America/Sao_Paulo";
+
   const messages: Array<Record<string, unknown>> = [
     {
       role: "system",
       content:
         (aiConfig.system_prompt?.trim() ||
           "Você é um atendente comercial simpático e objetivo. Responda em português do Brasil, em mensagens curtas de WhatsApp, qualificando o interesse do cliente e coletando nome e necessidade. Nunca invente preços ou prazos.") +
+        `\n\n${todayBrief(timezone)} Ao falar de datas, use sempre o ano corrente, ` +
+        "e chame a ferramenta consultar_data antes de afirmar em que dia da semana uma data cai." +
         libraryBrief,
     },
     ...((history ?? []) as Array<{ sender: string; content: string }>)
@@ -595,8 +602,9 @@ async function maybeAiReply(
       })),
   ];
 
-  const tools = library.length > 0
-    ? [{
+  const tools: Array<Record<string, unknown>> = [CONSULTAR_DATA_TOOL];
+  if (library.length > 0) {
+    tools.push({
         type: "function",
         function: {
           name: "enviar_arquivo",
@@ -611,8 +619,8 @@ async function maybeAiReply(
             required: ["id"],
           },
         },
-      }]
-    : undefined;
+    });
+  }
 
   const callLlm = async (msgs: Array<Record<string, unknown>>) => {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -624,7 +632,7 @@ async function maybeAiReply(
       body: JSON.stringify({
         model: aiConfig.model || "gpt-4o-mini",
         messages: msgs,
-        ...(tools ? { tools } : {}),
+        tools,
         max_tokens: 300,
         temperature: 0.7,
       }),
@@ -651,42 +659,65 @@ async function maybeAiReply(
   };
 
   try {
-    const data = await callLlm(messages);
-    const choice = data?.choices?.[0]?.message;
-    if (!choice) return;
+    // Consultar data devolve o resultado ao modelo e ele continua escrevendo;
+    // enviar arquivo encerra o turno. Três voltas bastam e limitam o gasto se o
+    // modelo entrar em laço de consultas.
+    for (let round = 0; round < 3; round += 1) {
+      const data = await callLlm(messages);
+      const choice = data?.choices?.[0]?.message;
+      if (!choice) return;
 
-    const call = choice.tool_calls?.[0];
-    if (call?.function?.name === "enviar_arquivo") {
-      const args = JSON.parse(call.function.arguments || "{}") as { id?: string; mensagem?: string };
-      const asset = library.find((a) => a.id === args.id);
+      const call = choice.tool_calls?.[0];
 
-      // Modelo inventou id: segue como conversa normal em vez de calar.
-      if (!asset) {
-        console.error("maybeAiReply: arquivo inexistente", args.id);
-      } else {
-        const item = await loadLibraryItem(supabase, config.company_id, asset.id);
-        if (item) {
-          const caption = args.mensagem?.trim() || item.title;
-          const wamid = await sendWhatsappMedia(config, fromPhone, item, caption);
-          if (wamid) {
-            await logAiMessage(caption, wamid, {
-              mediaUrl: item.file_url,
-              mediaType: item.media_type,
-              mimetype: item.mimetype,
-              libraryItemId: item.id,
-            });
+      if (call?.function?.name === "consultar_data") {
+        const args = JSON.parse(call.function.arguments || "{}") as { data?: string };
+        const info = describeDate(args.data ?? "", timezone);
+        messages.push({
+          role: "assistant",
+          content: choice.content ?? null,
+          tool_calls: choice.tool_calls,
+        });
+        messages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: JSON.stringify(info ?? { erro: "data não reconhecida" }),
+        });
+        continue;
+      }
+
+      if (call?.function?.name === "enviar_arquivo") {
+        const args = JSON.parse(call.function.arguments || "{}") as { id?: string; mensagem?: string };
+        const asset = library.find((a) => a.id === args.id);
+
+        // Modelo inventou id: segue como conversa normal em vez de calar.
+        if (!asset) {
+          console.error("maybeAiReply: arquivo inexistente", args.id);
+        } else {
+          const item = await loadLibraryItem(supabase, config.company_id, asset.id);
+          if (item) {
+            const caption = args.mensagem?.trim() || item.title;
+            const wamid = await sendWhatsappMedia(config, fromPhone, item, caption);
+            if (wamid) {
+              await logAiMessage(caption, wamid, {
+                mediaUrl: item.file_url,
+                mediaType: item.media_type,
+                mimetype: item.mimetype,
+                libraryItemId: item.id,
+              });
+            }
+            return;
           }
-          return;
         }
       }
+
+      const reply = choice.content?.trim();
+      if (!reply) return;
+
+      const wamid = await sendWhatsappText(config, fromPhone, reply);
+      if (!wamid) return;
+      await logAiMessage(reply, wamid);
+      return;
     }
-
-    const reply = choice.content?.trim();
-    if (!reply) return;
-
-    const wamid = await sendWhatsappText(config, fromPhone, reply);
-    if (!wamid) return;
-    await logAiMessage(reply, wamid);
   } catch (e) {
     console.error("maybeAiReply: exception", e instanceof Error ? e.message : "unknown");
   }
@@ -730,7 +761,7 @@ async function processChange(
   // para o humano ler no chat de qualquer forma.
   const { data: aiConfigRaw } = await supabase
     .from("ai_configs")
-    .select("enabled, system_prompt, model, openai_api_key")
+    .select("enabled, system_prompt, model, openai_api_key, followup_timezone")
     .eq("company_id", config.company_id)
     .maybeSingle();
   const aiConfig = aiConfigRaw as AiConfig | null;
