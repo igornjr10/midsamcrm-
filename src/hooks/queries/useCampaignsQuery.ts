@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { WhatsappTemplate } from "@/lib/templates";
 import type { Campaign, CampaignTarget, VariableMap } from "@/lib/types";
+import { fetchAllPages } from "./paginate";
 
 export function campaignsQueryKey(companyId: string | undefined) {
   return ["campaigns", companyId] as const;
@@ -38,14 +39,15 @@ export function useCampaignsQuery(companyId: string | undefined) {
     queryKey: campaignsQueryKey(companyId),
     queryFn: async () => {
       if (!companyId) return [];
-      const { data, error } = await supabase
-        .from("campaigns")
-        .select("*")
-        .eq("company_id", companyId)
-        .order("created_at", { ascending: false })
-        .limit(100);
-      if (error) throw error;
-      return (data ?? []) as Campaign[];
+      return fetchAllPages<Campaign>((from, to) =>
+        supabase
+          .from("campaigns")
+          .select("*")
+          .eq("company_id", companyId)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+          .range(from, to),
+      );
     },
     enabled: !!companyId,
     staleTime: 10_000,
@@ -61,14 +63,15 @@ export function useCampaignTargetsQuery(campaignId: string | undefined) {
     queryKey: campaignTargetsQueryKey(campaignId),
     queryFn: async () => {
       if (!campaignId) return [];
-      const { data, error } = await supabase
-        .from("campaign_targets")
-        .select("*")
-        .eq("campaign_id", campaignId)
-        .order("created_at", { ascending: true })
-        .limit(2000);
-      if (error) throw error;
-      return (data ?? []) as CampaignTarget[];
+      return fetchAllPages<CampaignTarget>((from, to) =>
+        supabase
+          .from("campaign_targets")
+          .select("*")
+          .eq("campaign_id", campaignId)
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to),
+      );
     },
     enabled: !!campaignId,
     staleTime: 10_000,

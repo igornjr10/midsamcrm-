@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { Contact } from "@/lib/types";
+import { fetchAllPages } from "./paginate";
 
 export function contactsQueryKey(companyId: string | undefined) {
   return ["contacts", companyId] as const;
@@ -11,13 +12,15 @@ export function useContactsQuery(companyId: string | undefined) {
     queryKey: contactsQueryKey(companyId),
     queryFn: async () => {
       if (!companyId) return [];
-      const { data, error } = await supabase
-        .from("contacts")
-        .select("*")
-        .eq("company_id", companyId)
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return (data ?? []) as Contact[];
+      return fetchAllPages<Contact>((from, to) =>
+        supabase
+          .from("contacts")
+          .select("*")
+          .eq("company_id", companyId)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+          .range(from, to),
+      );
     },
     enabled: !!companyId,
     staleTime: 30_000,
