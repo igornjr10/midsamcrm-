@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Send, Search, Loader2, Bot, Play, FileText, MessageSquare, MessagesSquare } from "lucide-react";
+import {
+  Send, Search, Loader2, Bot, Play, FileText, MessageSquare, MessagesSquare, Mic,
+} from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -319,6 +321,20 @@ export default function Chat() {
                           <a href={mediaUrl} target="_blank" rel="noreferrer" className="mb-1 block underline">
                             Abrir documento
                           </a>
+                        )}
+                        {mediaUrl && mediaType === "audio" && (
+                          <audio controls preload="none" src={mediaUrl} className="mb-1.5 h-9 w-56 max-w-full" />
+                        )}
+                        {mediaUrl && mediaType === "video" && (
+                          <video controls preload="metadata" src={mediaUrl} className="mb-1.5 max-h-64 rounded-lg" />
+                        )}
+                        {/* Áudio vira texto no webhook; o selo evita ler a
+                            transcrição achando que o lead digitou aquilo. */}
+                        {m.metadata?.transcribed === true && (
+                          <p className="mb-0.5 flex items-center gap-1 text-[10px] uppercase tracking-wider opacity-70">
+                            <Mic className="h-3 w-3" />
+                            Áudio transcrito
+                          </p>
                         )}
                         <p className="whitespace-pre-wrap break-words leading-relaxed">{m.content}</p>
                         <p className="tabular mt-1 text-right text-[10px] opacity-70">

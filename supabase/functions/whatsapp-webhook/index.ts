@@ -138,6 +138,10 @@ async function updateDeliveryStatus(
 }
 
 // Baixa a mídia da Meta/Datafy e sobe para o bucket chat-media.
+// Devolve também os bytes: o áudio precisa deles para a transcrição, e baixar
+// de novo pela URL pública seria uma volta desnecessária.
+type DownloadedMedia = { url: string; bytes: Uint8Array; mime: string };
+
 async function downloadMedia(
   mediaId: string,
   config: WhatsappConfig,
@@ -145,7 +149,7 @@ async function downloadMedia(
   mimetype: string,
   supabase: Db,
   supabaseUrl: string,
-): Promise<string | null> {
+): Promise<DownloadedMedia | null> {
   const base = resolveApiBase(config.api_base_url);
   const host = base.replace(/\/v\d+(\.\d+)?$/, "");
 
@@ -232,7 +236,51 @@ async function downloadMedia(
     return null;
   }
 
-  return `${supabaseUrl}/storage/v1/object/public/chat-media/${filePath}`;
+  return {
+    url: `${supabaseUrl}/storage/v1/object/public/chat-media/${filePath}`,
+    bytes,
+    mime: mimeKey,
+  };
+}
+
+// Transcreve o áudio do lead. Sem isso o SDR IA recebe "[Áudio]" e responde no
+// escuro — e boa parte dos leads manda áudio em vez de digitar.
+async function transcribeAudio(
+  media: DownloadedMedia,
+  apiKey: string,
+): Promise<string | null> {
+  const extByMime: Record<string, string> = {
+    "audio/ogg": "ogg", "audio/opus": "ogg", "audio/mpeg": "mp3",
+    "audio/mp4": "m4a", "audio/aac": "m4a", "audio/amr": "amr", "audio/wav": "wav",
+  };
+  const ext = extByMime[media.mime] ?? "ogg";
+
+  try {
+    const form = new FormData();
+    // O nome do arquivo importa: a API decide o decoder pela extensão.
+    // Cópia para ArrayBuffer: o Uint8Array do fetch pode vir sobre
+    // SharedArrayBuffer, que o BlobPart não aceita.
+    const buffer = media.bytes.slice().buffer as ArrayBuffer;
+    form.append("file", new Blob([buffer], { type: media.mime }), `audio.${ext}`);
+    form.append("model", "whisper-1");
+    form.append("language", "pt");
+
+    const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form,
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!res.ok) {
+      console.error("transcribeAudio falhou", res.status, await res.text().catch(() => ""));
+      return null;
+    }
+    const data = await res.json() as { text?: string };
+    return data.text?.trim() || null;
+  } catch (e) {
+    console.error("transcribeAudio: exception", e instanceof Error ? e.message : "unknown");
+    return null;
+  }
 }
 
 // Texto + mídia (já baixada para o bucket) de uma mensagem do webhook.
@@ -242,22 +290,48 @@ async function extractContent(
   config: WhatsappConfig,
   supabase: Db,
   supabaseUrl: string,
-): Promise<{ content: string; mediaUrl: string | null; mediaType: string | null; mimetype: string | null }> {
+  openaiKey: string | null,
+): Promise<{
+  content: string;
+  mediaUrl: string | null;
+  mediaType: string | null;
+  mimetype: string | null;
+  transcript: string | null;
+}> {
   const media = async (
     id: string | undefined,
     type: "image" | "video" | "audio" | "document",
     fallbackMime: string,
     caption: string,
   ) => {
-    if (!id) return { content: caption, mediaUrl: null, mediaType: type, mimetype: fallbackMime };
-    const mimetype = fallbackMime;
-    const mediaUrl = await downloadMedia(id, config, msg.id, mimetype, supabase, supabaseUrl);
-    return { content: caption, mediaUrl, mediaType: type, mimetype };
+    const base = { mediaType: type, mimetype: fallbackMime, transcript: null as string | null };
+    if (!id) return { content: caption, mediaUrl: null, ...base };
+
+    const downloaded = await downloadMedia(id, config, msg.id, fallbackMime, supabase, supabaseUrl);
+    if (!downloaded) return { content: caption, mediaUrl: null, ...base };
+
+    // O texto do áudio vira o conteúdo da mensagem: é ele que alimenta o
+    // histórico da IA, a busca e o sinal de fechamento. O áudio continua no
+    // bucket para ouvir no chat.
+    if (type === "audio" && openaiKey) {
+      const transcript = await transcribeAudio(downloaded, openaiKey);
+      if (transcript) {
+        return {
+          content: transcript,
+          mediaUrl: downloaded.url,
+          ...base,
+          mimetype: downloaded.mime,
+          transcript,
+        };
+      }
+    }
+
+    return { content: caption, mediaUrl: downloaded.url, ...base, mimetype: downloaded.mime };
   };
 
   switch (msg.type) {
     case "text":
-      return { content: msg.text?.body ?? "", mediaUrl: null, mediaType: null, mimetype: null };
+      return { content: msg.text?.body ?? "", mediaUrl: null, mediaType: null, mimetype: null, transcript: null };
     case "image":
       return await media(msg.image?.id, "image", msg.image?.mime_type ?? "image/jpeg", msg.image?.caption ?? "[Imagem]");
     case "video":
@@ -272,7 +346,7 @@ async function extractContent(
         msg.document?.caption ?? msg.document?.filename ?? "[Documento]",
       );
     default:
-      return { content: `[${msg.type}]`, mediaUrl: null, mediaType: null, mimetype: null };
+      return { content: `[${msg.type}]`, mediaUrl: null, mediaType: null, mimetype: null, transcript: null };
   }
 }
 
@@ -375,18 +449,11 @@ async function maybeAiReply(
   config: WhatsappConfig,
   contact: { id: string; ai_paused: boolean },
   fromPhone: string,
+  aiConfig: AiConfig | null,
+  apiKey: string | null,
 ): Promise<void> {
   if (contact.ai_paused) return;
-
-  const { data: aiConfigRaw } = await supabase
-    .from("ai_configs")
-    .select("enabled, system_prompt, model, openai_api_key")
-    .eq("company_id", config.company_id)
-    .maybeSingle();
-  const aiConfig = aiConfigRaw as AiConfig | null;
   if (!aiConfig?.enabled) return;
-
-  const apiKey = aiConfig.openai_api_key?.trim() || Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) {
     console.error("maybeAiReply: sem OPENAI_API_KEY configurada");
     return;
@@ -489,6 +556,17 @@ async function processChange(
     await updateDeliveryStatus(supabase, config.company_id, status);
   }
 
+  // Uma leitura só por webhook: serve à transcrição do áudio e à resposta da
+  // IA. A transcrição não depende do SDR estar ligado — o áudio transcrito vale
+  // para o humano ler no chat de qualquer forma.
+  const { data: aiConfigRaw } = await supabase
+    .from("ai_configs")
+    .select("enabled, system_prompt, model, openai_api_key")
+    .eq("company_id", config.company_id)
+    .maybeSingle();
+  const aiConfig = aiConfigRaw as AiConfig | null;
+  const openaiKey = aiConfig?.openai_api_key?.trim() || Deno.env.get("OPENAI_API_KEY") || null;
+
   const contacts = (value.contacts ?? []) as WhatsappContact[];
   const nameByWaId = new Map(contacts.map((c) => [c.wa_id, c.profile?.name ?? null]));
 
@@ -519,7 +597,8 @@ async function processChange(
       .maybeSingle();
     if (dup?.id) continue;
 
-    const { content, mediaUrl, mediaType, mimetype } = await extractContent(msg, config, supabase, supabaseUrl);
+    const { content, mediaUrl, mediaType, mimetype, transcript } =
+      await extractContent(msg, config, supabase, supabaseUrl, openaiKey);
     if (!content && !mediaUrl) continue;
 
     const contact = await findOrCreateContact(supabase, config, msg.from, nameByWaId.get(msg.from) ?? null);
@@ -535,13 +614,15 @@ async function processChange(
       message_ref: msg.id,
       metadata: {
         ...(mediaUrl ? { mediaUrl, mediaType, mimetype } : {}),
+        ...(transcript ? { transcribed: true } : {}),
         wa_timestamp: msg.timestamp ?? null,
       },
     });
 
-    // SDR IA responde só a mensagens de texto recebidas (mídia fica com o humano).
-    if (msg.type === "text" && content) {
-      await maybeAiReply(supabase, config, contact, msg.from);
+    // Texto e áudio transcrito seguem para o SDR: nos dois casos existe uma
+    // frase real do lead para responder. Imagem e documento ficam com o humano.
+    if (content && (msg.type === "text" || transcript)) {
+      await maybeAiReply(supabase, config, contact, msg.from, aiConfig, openaiKey);
     }
   }
 
@@ -556,7 +637,10 @@ async function processChange(
     const contactPhone = echoRecipient(echo);
     if (!contactPhone || !echo.id || knownEchoes.has(echo.id)) continue;
 
-    const { content, mediaUrl, mediaType, mimetype } = await extractContent(echo, config, supabase, supabaseUrl);
+    // Áudio que a empresa enviou não é transcrito: o custo não se paga, ninguém
+    // precisa ler de volta o que o próprio time gravou.
+    const { content, mediaUrl, mediaType, mimetype } =
+      await extractContent(echo, config, supabase, supabaseUrl, null);
     if (!content && !mediaUrl) continue;
 
     const contact = await findOrCreateContact(supabase, config, contactPhone, null);
