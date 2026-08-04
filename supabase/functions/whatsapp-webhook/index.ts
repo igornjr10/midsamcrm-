@@ -443,6 +443,106 @@ async function sendWhatsappText(config: WhatsappConfig, phone: string, text: str
   return data.messages?.[0]?.id ?? null;
 }
 
+// Só o que o modelo precisa para escolher o arquivo — o resto vem depois, do
+// banco, para o link e o mimetype não passarem pelo prompt.
+type LibraryAsset = { id: string; kind: string; title: string; description: string | null };
+
+type LibraryFile = {
+  id: string;
+  title: string;
+  file_url: string;
+  mimetype: string;
+  media_type: string;
+};
+
+type LlmResponse = {
+  choices?: Array<{
+    message?: {
+      content?: string;
+      tool_calls?: Array<{ function?: { name?: string; arguments?: string } }>;
+    };
+  }>;
+};
+
+async function loadLibraryItem(
+  supabase: Db,
+  companyId: string,
+  id: string,
+): Promise<LibraryFile | null> {
+  const { data } = await supabase
+    .from("library_items")
+    .select("id, title, file_url, mimetype, media_type")
+    .eq("company_id", companyId)
+    .eq("id", id)
+    .eq("active", true)
+    .maybeSingle();
+  return (data as LibraryFile | null) ?? null;
+}
+
+// Envia mídia subindo o binário para a Meta e referenciando o id devolvido.
+// Mandar {link} direto falha em silêncio em alguns provedores — mesma escolha
+// que o whatsapp-send já faz no envio manual.
+async function sendWhatsappMedia(
+  config: WhatsappConfig,
+  phone: string,
+  item: LibraryFile,
+  caption: string,
+): Promise<string | null> {
+  const base = resolveApiBase(config.api_base_url);
+  const waType = ["image", "video", "document"].includes(item.media_type) ? item.media_type : "document";
+
+  try {
+    const fileRes = await fetch(item.file_url, { signal: AbortSignal.timeout(30_000) });
+    if (!fileRes.ok) {
+      console.error("sendWhatsappMedia: download falhou", fileRes.status);
+      return null;
+    }
+    const blob = await fileRes.blob();
+
+    const form = new FormData();
+    form.append("messaging_product", "whatsapp");
+    form.append("file", blob, `media-${Date.now()}`);
+    form.append("type", item.mimetype || blob.type || "application/octet-stream");
+
+    const uploadRes = await fetch(`${base}/${config.phone_number_id}/media`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${config.access_token}` },
+      body: form,
+      signal: AbortSignal.timeout(60_000),
+    });
+    const uploaded = await uploadRes.json().catch(() => null) as { id?: string } | null;
+    if (!uploadRes.ok || !uploaded?.id) {
+      console.error("sendWhatsappMedia: upload falhou", uploadRes.status);
+      return null;
+    }
+
+    const sendRes = await fetch(`${base}/${config.phone_number_id}/messages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.access_token}`,
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: phone,
+        type: waType,
+        [waType]: { id: uploaded.id, ...(caption ? { caption } : {}) },
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!sendRes.ok) {
+      console.error("sendWhatsappMedia: envio falhou", sendRes.status, await sendRes.text().catch(() => ""));
+      return null;
+    }
+    const sent = await sendRes.json().catch(() => ({})) as { messages?: Array<{ id?: string }> };
+    return sent.messages?.[0]?.id ?? null;
+  } catch (e) {
+    console.error("sendWhatsappMedia: exception", e instanceof Error ? e.message : "unknown");
+    return null;
+  }
+}
+
 // SDR IA: gera e envia a resposta automática quando habilitada para a empresa.
 async function maybeAiReply(
   supabase: Db,
@@ -466,12 +566,25 @@ async function maybeAiReply(
     .order("created_at", { ascending: false })
     .limit(12);
 
-  const messages = [
+  // Biblioteca da empresa: o modelo escolhe pelo título e pela descrição.
+  const { data: libraryRaw } = await supabase.rpc("library_for_ai", {
+    p_company_id: config.company_id,
+  });
+  const library = (libraryRaw ?? []) as LibraryAsset[];
+
+  const libraryBrief = library.length > 0
+    ? "\n\nArquivos que você pode enviar (use a ferramenta enviar_arquivo com o id):\n" +
+      library.map((a) => `- ${a.id} · [${a.kind}] ${a.title}${a.description ? `: ${a.description}` : ""}`).join("\n") +
+      "\nEnvie um arquivo só quando ele responder o que o lead pediu. Nunca invente arquivo que não esteja nesta lista."
+    : "";
+
+  const messages: Array<Record<string, unknown>> = [
     {
       role: "system",
       content:
-        aiConfig.system_prompt?.trim() ||
-        "Você é um atendente comercial simpático e objetivo. Responda em português do Brasil, em mensagens curtas de WhatsApp, qualificando o interesse do cliente e coletando nome e necessidade. Nunca invente preços ou prazos.",
+        (aiConfig.system_prompt?.trim() ||
+          "Você é um atendente comercial simpático e objetivo. Responda em português do Brasil, em mensagens curtas de WhatsApp, qualificando o interesse do cliente e coletando nome e necessidade. Nunca invente preços ou prazos.") +
+        libraryBrief,
     },
     ...((history ?? []) as Array<{ sender: string; content: string }>)
       .slice()
@@ -482,7 +595,26 @@ async function maybeAiReply(
       })),
   ];
 
-  try {
+  const tools = library.length > 0
+    ? [{
+        type: "function",
+        function: {
+          name: "enviar_arquivo",
+          description:
+            "Envia ao lead, pelo WhatsApp, um arquivo da biblioteca da empresa (cardápio, orçamento, material de apoio).",
+          parameters: {
+            type: "object",
+            properties: {
+              id: { type: "string", description: "id do arquivo, exatamente como listado" },
+              mensagem: { type: "string", description: "frase curta que acompanha o arquivo" },
+            },
+            required: ["id"],
+          },
+        },
+      }]
+    : undefined;
+
+  const callLlm = async (msgs: Array<Record<string, unknown>>) => {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -491,7 +623,8 @@ async function maybeAiReply(
       },
       body: JSON.stringify({
         model: aiConfig.model || "gpt-4o-mini",
-        messages,
+        messages: msgs,
+        ...(tools ? { tools } : {}),
         max_tokens: 300,
         temperature: 0.7,
       }),
@@ -499,25 +632,61 @@ async function maybeAiReply(
     });
     if (!res.ok) {
       console.error("maybeAiReply: LLM error", res.status, await res.text().catch(() => ""));
-      return;
+      return null;
     }
-    const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
-    const reply = data.choices?.[0]?.message?.content?.trim();
-    if (!reply) return;
+    return await res.json() as LlmResponse;
+  };
 
-    const wamid = await sendWhatsappText(config, fromPhone, reply);
-    if (!wamid) return;
-
+  const logAiMessage = async (content: string, wamid: string, extra?: Record<string, unknown>) => {
     await supabase.from("conversations").insert({
       user_id: config.user_id,
       company_id: config.company_id,
       contact_id: contact.id,
       sender: "ai",
-      content: reply,
+      content,
       channel: "whatsapp",
       message_ref: wamid,
-      metadata: { deliveryStatus: "sent" },
+      metadata: { deliveryStatus: "sent", ...(extra ?? {}) },
     });
+  };
+
+  try {
+    const data = await callLlm(messages);
+    const choice = data?.choices?.[0]?.message;
+    if (!choice) return;
+
+    const call = choice.tool_calls?.[0];
+    if (call?.function?.name === "enviar_arquivo") {
+      const args = JSON.parse(call.function.arguments || "{}") as { id?: string; mensagem?: string };
+      const asset = library.find((a) => a.id === args.id);
+
+      // Modelo inventou id: segue como conversa normal em vez de calar.
+      if (!asset) {
+        console.error("maybeAiReply: arquivo inexistente", args.id);
+      } else {
+        const item = await loadLibraryItem(supabase, config.company_id, asset.id);
+        if (item) {
+          const caption = args.mensagem?.trim() || item.title;
+          const wamid = await sendWhatsappMedia(config, fromPhone, item, caption);
+          if (wamid) {
+            await logAiMessage(caption, wamid, {
+              mediaUrl: item.file_url,
+              mediaType: item.media_type,
+              mimetype: item.mimetype,
+              libraryItemId: item.id,
+            });
+          }
+          return;
+        }
+      }
+    }
+
+    const reply = choice.content?.trim();
+    if (!reply) return;
+
+    const wamid = await sendWhatsappText(config, fromPhone, reply);
+    if (!wamid) return;
+    await logAiMessage(reply, wamid);
   } catch (e) {
     console.error("maybeAiReply: exception", e instanceof Error ? e.message : "unknown");
   }

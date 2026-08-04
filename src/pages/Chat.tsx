@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  Send, Search, Loader2, Bot, Play, FileText, MessageSquare, MessagesSquare, Mic,
+  Send, Search, Loader2, Bot, Play, FileText, MessageSquare, MessagesSquare, Mic, Library,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,13 +13,20 @@ import {
   useWhatsappConfigQuery,
   useUpdateContactMutation,
   usePipelineStagesQuery,
+  useLibraryQuery,
 } from "@/hooks/queries";
-import { getStageLabel, getStageTone, getToneClasses, type Contact } from "@/lib/types";
+import {
+  getStageLabel, getStageTone, getToneClasses, LIBRARY_KINDS,
+  type Contact, type LibraryItem,
+} from "@/lib/types";
 import SendTemplateDialog from "@/components/chat/SendTemplateDialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 function timeLabel(iso: string): string {
@@ -40,12 +47,16 @@ export default function Chat() {
   const { data: messages = [] } = useConversationsQuery(company?.id, selectedContactId ?? undefined);
   const { data: whatsappConfig } = useWhatsappConfigQuery(company?.id);
   const { data: stages = [] } = usePipelineStagesQuery(company?.id);
+  const { data: library = [] } = useLibraryQuery(company?.id);
   const updateContact = useUpdateContactMutation();
+
+  const activeLibrary = useMemo(() => library.filter((i) => i.active), [library]);
 
   const [search, setSearch] = useState("");
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const selectedContact: Contact | null =
@@ -76,6 +87,34 @@ export default function Chat() {
       toast.success(`Etapa: ${getStageLabel(stages, stage)}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erro ao mudar a etapa");
+    }
+  };
+
+  // Envia um arquivo da biblioteca para a conversa aberta.
+  const handleSendLibrary = async (item: LibraryItem) => {
+    if (!selectedContact?.phone || !whatsappConfig) {
+      toast.error("Contato sem telefone ou WhatsApp não conectado.");
+      return;
+    }
+    setLibraryOpen(false);
+    try {
+      const { data, error } = await supabase.functions.invoke("whatsapp-send?action=send-media", {
+        body: {
+          phone: selectedContact.phone,
+          contact_id: selectedContact.id,
+          company_id: company?.id,
+          mediaUrl: item.file_url,
+          mediaType: item.media_type,
+          mimetype: item.mimetype,
+          caption: item.title,
+        },
+      });
+      if (error || (data && data.success === false)) {
+        throw new Error((data?.error as string) || error?.message || "Falha ao enviar");
+      }
+      toast.success(`"${item.title}" enviado`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao enviar arquivo");
     }
   };
 
@@ -256,6 +295,15 @@ export default function Chat() {
                 <Button
                   size="sm"
                   variant="outline"
+                  onClick={() => setLibraryOpen(true)}
+                  title="Enviar cardápio, orçamento ou outro arquivo da biblioteca"
+                >
+                  <Library />
+                  Arquivo
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
                   onClick={() => setTemplateOpen(true)}
                   title="Enviar um template aprovado (necessário fora da janela de 24h)"
                 >
@@ -376,6 +424,49 @@ export default function Chat() {
         open={templateOpen}
         onOpenChange={setTemplateOpen}
       />
+
+      <Dialog open={libraryOpen} onOpenChange={setLibraryOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Enviar arquivo</DialogTitle>
+            <DialogDescription>
+              Da biblioteca da empresa. Só os arquivos ligados aparecem aqui.
+            </DialogDescription>
+          </DialogHeader>
+          {activeLibrary.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              Nenhum arquivo ligado. Adicione em Biblioteca.
+            </p>
+          ) : (
+            <ScrollArea className="max-h-80">
+              <div className="space-y-1.5 pr-2">
+                {activeLibrary.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => void handleSendLibrary(item)}
+                    className="flex w-full items-center gap-3 rounded-lg border p-2.5 text-left transition-colors hover:bg-accent/50"
+                  >
+                    {item.media_type === "image" ? (
+                      <img src={item.file_url} alt="" className="h-10 w-10 shrink-0 rounded object-cover" />
+                    ) : (
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-muted">
+                        <FileText className="h-5 w-5 text-muted-foreground" />
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">{item.title}</span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {LIBRARY_KINDS.find((k) => k.id === item.kind)?.label}
+                        {item.description ? ` · ${item.description}` : ""}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

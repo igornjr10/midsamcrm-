@@ -11,6 +11,7 @@ import Pipeline from "@/pages/Pipeline";
 import Contacts from "@/pages/Contacts";
 import Chat from "@/pages/Chat";
 import Agenda from "@/pages/Agenda";
+import Biblioteca from "@/pages/Biblioteca";
 import Campaigns from "@/pages/Campaigns";
 import Settings from "@/pages/Settings";
 import SdrIa from "@/pages/SdrIa";
@@ -59,6 +60,7 @@ export default function App() {
                 {/* Link antigo de Tarefas continua funcionando (favoritos, histórico). */}
                 <Route path="/tarefas" element={<Navigate to="/agenda" replace />} />
                 <Route path="/disparos" element={<Campaigns />} />
+                <Route path="/biblioteca" element={<Biblioteca />} />
                 <Route path="/sdr" element={<SdrIa />} />
                 <Route path="/empresas" element={<Companies />} />
                 <Route path="/configuracoes" element={<Settings />} />

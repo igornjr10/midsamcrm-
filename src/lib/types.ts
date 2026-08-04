@@ -241,6 +241,33 @@ export interface Company {
   updated_at: string;
 }
 
+export type LibraryKind = "cardapio" | "orcamento" | "outro";
+
+/** Arquivo da biblioteca da empresa — o que a IA pode enviar pelo WhatsApp. */
+export interface LibraryItem {
+  id: string;
+  company_id: string;
+  user_id: string;
+  kind: LibraryKind;
+  title: string;
+  /** É por aqui que a IA decide qual arquivo responde o pedido do lead. */
+  description: string | null;
+  file_path: string;
+  file_url: string;
+  mimetype: string;
+  media_type: "image" | "document" | "video";
+  size_bytes: number | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export const LIBRARY_KINDS: Array<{ id: LibraryKind; label: string; hint: string }> = [
+  { id: "cardapio", label: "Cardápio", hint: "Fotos e PDFs do cardápio" },
+  { id: "orcamento", label: "Orçamentos", hint: "Tabelas e propostas modelo" },
+  { id: "outro", label: "Outros", hint: "Material de apoio" },
+];
+
 export type StageTone =
   | "slate" | "sky" | "indigo" | "violet" | "teal" | "amber" | "emerald" | "rose";
 export type StageKind = "open" | "won" | "lost";
