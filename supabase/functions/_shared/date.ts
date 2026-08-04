@@ -87,6 +87,69 @@ export function describeDate(
   };
 }
 
+/**
+ * Deslocamento do fuso naquele instante (negativo a oeste de Greenwich).
+ * Calculado comparando a data renderizada no fuso com o próprio instante —
+ * não usa o fuso da máquina, que no servidor é UTC e no dev não é.
+ */
+function tzOffsetMs(date: Date, timezone: string): number {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      hour12: false,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+    })
+      .formatToParts(date)
+      .map((p) => [p.type, p.value]),
+  ) as Record<string, string>;
+
+  const comoUTC = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour) % 24,
+    Number(parts.minute),
+    Number(parts.second),
+  );
+  return comoUTC - date.getTime();
+}
+
+/** Início e fim (UTC) do dia local — janela para consultar a agenda. */
+export function dayRange(
+  info: DateInfo,
+  timezone = DEFAULT_TZ,
+): { from: string; to: string } {
+  const [dia, mes, ano] = info.data.split("/").map(Number);
+  // Offset medido ao meio-dia daquele dia: pega o horário de verão certo.
+  const offset = tzOffsetMs(new Date(Date.UTC(ano, mes - 1, dia, 12)), timezone);
+  const inicio = new Date(Date.UTC(ano, mes - 1, dia, 0, 0, 0) - offset);
+  return {
+    from: inicio.toISOString(),
+    to: new Date(inicio.getTime() + 86_400_000).toISOString(),
+  };
+}
+
+export const CONSULTAR_AGENDA_TOOL = {
+  type: "function",
+  function: {
+    name: "consultar_agenda",
+    description:
+      "Lista os compromissos já marcados numa data. Use antes de confirmar " +
+      "disponibilidade — nunca afirme que um dia está livre sem consultar.",
+    parameters: {
+      type: "object",
+      properties: {
+        data: {
+          type: "string",
+          description: "A data, como 2026-08-09, 09/08/2026 ou 09/08",
+        },
+      },
+      required: ["data"],
+    },
+  },
+};
+
 export const CONSULTAR_DATA_TOOL = {
   type: "function",
   function: {

@@ -6,7 +6,9 @@
 // Todas as empresas apontam o webhook do Datafy para esta mesma URL; a empresa
 // dona da mensagem é resolvida pelo metadata.phone_number_id do payload.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
-import { CONSULTAR_DATA_TOOL, describeDate, todayBrief } from "../_shared/date.ts";
+import {
+  CONSULTAR_AGENDA_TOOL, CONSULTAR_DATA_TOOL, dayRange, describeDate, todayBrief,
+} from "../_shared/date.ts";
 
 // Cliente com service role. Sem os genéricos explícitos o ReturnType resolve
 // para os defaults (never) e não aceita o cliente real.
@@ -450,6 +452,14 @@ async function sendWhatsappText(config: WhatsappConfig, phone: string, text: str
 // banco, para o link e o mimetype não passarem pelo prompt.
 type LibraryAsset = { id: string; kind: string; title: string; description: string | null };
 
+type AgendaEntry = {
+  starts_at: string;
+  ends_at: string | null;
+  all_day: boolean;
+  title: string;
+  kind: string;
+};
+
 type LibraryFile = {
   id: string;
   title: string;
@@ -589,8 +599,10 @@ async function maybeAiReply(
       content:
         (aiConfig.system_prompt?.trim() ||
           "Você é um atendente comercial simpático e objetivo. Responda em português do Brasil, em mensagens curtas de WhatsApp, qualificando o interesse do cliente e coletando nome e necessidade. Nunca invente preços ou prazos.") +
-        `\n\n${todayBrief(timezone)} Ao falar de datas, use sempre o ano corrente, ` +
-        "e chame a ferramenta consultar_data antes de afirmar em que dia da semana uma data cai." +
+        `\n\n${todayBrief(timezone)} Ao falar de datas, use sempre o ano corrente. ` +
+        "Chame consultar_data antes de afirmar em que dia da semana uma data cai, e " +
+        "consultar_agenda antes de dizer que uma data está livre ou ocupada. " +
+        "Nunca confirme uma reserva por conta própria: diga que vai confirmar com a equipe." +
         libraryBrief,
     },
     ...((history ?? []) as Array<{ sender: string; content: string }>)
@@ -602,7 +614,7 @@ async function maybeAiReply(
       })),
   ];
 
-  const tools: Array<Record<string, unknown>> = [CONSULTAR_DATA_TOOL];
+  const tools: Array<Record<string, unknown>> = [CONSULTAR_DATA_TOOL, CONSULTAR_AGENDA_TOOL];
   if (library.length > 0) {
     tools.push({
         type: "function",
@@ -669,9 +681,37 @@ async function maybeAiReply(
 
       const call = choice.tool_calls?.[0];
 
-      if (call?.function?.name === "consultar_data") {
+      if (call?.function?.name === "consultar_data" || call?.function?.name === "consultar_agenda") {
         const args = JSON.parse(call.function.arguments || "{}") as { data?: string };
         const info = describeDate(args.data ?? "", timezone);
+        let result: unknown = info ?? { erro: "data não reconhecida" };
+
+        if (info && call.function.name === "consultar_agenda") {
+          const { from, to } = dayRange(info, timezone);
+          const { data: agenda } = await supabase.rpc("agenda_for_ai", {
+            p_company_id: config.company_id,
+            p_from: from,
+            p_to: to,
+          });
+          const compromissos = (agenda ?? []) as AgendaEntry[];
+          result = {
+            ...info,
+            compromissos: compromissos.map((a) => ({
+              titulo: a.title,
+              tipo: a.kind,
+              horario: a.all_day
+                ? "dia inteiro"
+                : new Intl.DateTimeFormat("pt-BR", {
+                    timeZone: timezone, hour: "2-digit", minute: "2-digit",
+                  }).format(new Date(a.starts_at)),
+            })),
+            // Dito em texto: o modelo erra menos do que interpretando lista vazia.
+            resumo: compromissos.length === 0
+              ? "Nenhum compromisso marcado nesse dia."
+              : `${compromissos.length} compromisso(s) nesse dia.`,
+          };
+        }
+
         messages.push({
           role: "assistant",
           content: choice.content ?? null,
@@ -680,7 +720,7 @@ async function maybeAiReply(
         messages.push({
           role: "tool",
           tool_call_id: call.id,
-          content: JSON.stringify(info ?? { erro: "data não reconhecida" }),
+          content: JSON.stringify(result),
         });
         continue;
       }
