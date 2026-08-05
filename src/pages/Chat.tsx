@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  Send, Search, Loader2, Bot, Play, FileText, MessageSquare, MessagesSquare, Mic, Library, Paperclip,
+  Send, Search, Loader2, Bot, Play, FileText, MessagesSquare, Mic, Library, Paperclip,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase, SUPABASE_URL } from "@/integrations/supabase/client";
@@ -21,6 +21,7 @@ import {
 } from "@/lib/types";
 import SendTemplateDialog from "@/components/chat/SendTemplateDialog";
 import ContactPanel from "@/components/chat/ContactPanel";
+import ChatOverview from "@/components/chat/ChatOverview";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -289,17 +290,7 @@ export default function Chat() {
       {/* Thread */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-card">
         {!selectedContact ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <MessageSquare className="h-7 w-7" />
-            </span>
-            <div>
-              <p className="text-sm font-medium">Selecione um contato</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Escolha uma conversa à esquerda para ver o histórico e responder.
-              </p>
-            </div>
-          </div>
+          <ChatOverview onSelect={(contactId) => setSearchParams({ contato: contactId })} />
         ) : (
           <>
             <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
