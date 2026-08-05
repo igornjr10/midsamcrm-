@@ -367,14 +367,20 @@ export default function Chat() {
                 <Button
                   size="sm"
                   variant={selectedContact.ai_paused ? "default" : "outline"}
-                  onClick={() =>
-                    company &&
+                  onClick={() => {
+                    if (!company) return;
+                    const pausing = !selectedContact.ai_paused;
                     void updateContact.mutateAsync({
                       id: selectedContact.id,
                       company_id: company.id,
-                      ai_paused: !selectedContact.ai_paused,
-                    })
-                  }
+                      ai_paused: pausing,
+                      // O motivo acompanha o estado: reativar tem que limpar o
+                      // "humano_respondeu", senão o aviso continua na tela
+                      // dizendo que a IA está parada.
+                      ai_paused_at: pausing ? new Date().toISOString() : null,
+                      ai_paused_reason: null,
+                    });
+                  }}
                   title={
                     selectedContact.ai_paused
                       ? "A IA está pausada nesta conversa; clique para reativar"
@@ -395,6 +401,17 @@ export default function Chat() {
                 </Button>
               </div>
             </div>
+            {/* A IA parou sozinha: sem dizer isso, o silêncio dela parece defeito. */}
+            {selectedContact.ai_paused && selectedContact.ai_paused_reason === "humano_respondeu" && (
+              <div className="flex items-center gap-2 border-b bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-400">
+                <Bot className="h-3.5 w-3.5 shrink-0" />
+                <span>
+                  IA pausada automaticamente porque o time assumiu esta conversa
+                  {selectedContact.ai_paused_at ? ` em ${timeLabel(selectedContact.ai_paused_at)}` : ""}.
+                  Clique em "Reativar IA" para devolver o atendimento a ela.
+                </span>
+              </div>
+            )}
             <ScrollArea className="flex-1 bg-muted/30 p-4">
               <div className="flex min-h-full flex-col justify-end gap-1.5">
                 {messages.map((m) => {

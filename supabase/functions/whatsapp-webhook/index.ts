@@ -1045,6 +1045,9 @@ async function runSelftest(supabase: Db, verifyToken: string, textoTeste: string
     sdr_ligado: ai?.enabled ?? false,
     modelo: ai?.model ?? null,
     fuso: ai?.followup_timezone ?? null,
+    // Explica o SDR mudo numa conversa específica: o vendedor respondeu antes.
+    pausa_quando_humano_responde:
+      (ai as unknown as { pause_ai_on_human_reply?: boolean })?.pause_ai_on_human_reply ?? null,
     tem_prompt: !!ai?.system_prompt?.trim(),
     // De onde vem a chave, nunca a chave.
     chave: ai?.openai_api_key?.trim()

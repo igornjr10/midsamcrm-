@@ -15,6 +15,10 @@ export interface Contact {
   loss_reason: string | null;
   notes: string | null;
   ai_paused: boolean;
+  /** Quando a IA foi pausada nesta conversa. */
+  ai_paused_at: string | null;
+  /** "humano_respondeu" quando a pausa foi automática; null quando foi manual. */
+  ai_paused_reason: "humano_respondeu" | null;
   /** Última mensagem de qualquer lado. Mantida por trigger em conversations. */
   last_interaction_at: string | null;
   /** Última mensagem recebida do lead. */
@@ -122,6 +126,8 @@ export interface AiConfig {
   system_prompt: string | null;
   model: string;
   openai_api_key: string | null;
+  /** Pausa a IA no contato assim que um atendente humano responde a conversa. */
+  pause_ai_on_human_reply: boolean;
   // Follow-up automático (cadência de cobrança de quem parou de responder).
   followup_enabled: boolean;
   followup_timezone: string;

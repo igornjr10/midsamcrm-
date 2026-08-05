@@ -38,6 +38,7 @@ export default function SdrIa() {
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [model, setModel] = useState("gpt-4o-mini");
   const [apiKey, setApiKey] = useState("");
+  const [pauseOnHuman, setPauseOnHuman] = useState(true);
 
   useEffect(() => {
     if (!config) return;
@@ -45,6 +46,7 @@ export default function SdrIa() {
     setPrompt(config.system_prompt ?? DEFAULT_PROMPT);
     setModel(config.model);
     setApiKey(config.openai_api_key ?? "");
+    setPauseOnHuman(config.pause_ai_on_human_reply ?? true);
   }, [config]);
 
   const handleSave = async () => {
@@ -60,6 +62,7 @@ export default function SdrIa() {
         system_prompt: prompt.trim() || null,
         model,
         openai_api_key: apiKey.trim() || null,
+        pause_ai_on_human_reply: pauseOnHuman,
       });
       toast.success(enabled ? "SDR IA ligado! Novas mensagens de leads serão respondidas automaticamente." : "Configuração salva.");
     } catch (err) {
@@ -129,6 +132,25 @@ export default function SdrIa() {
                       <p className="text-sm font-medium">Ligar SDR IA</p>
                       <p className="text-xs text-muted-foreground">
                         Responder leads automaticamente no WhatsApp
+                      </p>
+                    </div>
+                  </label>
+
+                  <label
+                    className={cn(
+                      "flex cursor-pointer items-center gap-3 rounded-lg border p-3.5 transition-colors",
+                      pauseOnHuman ? "border-primary/40 bg-primary/5" : "hover:bg-accent/50",
+                    )}
+                  >
+                    <Checkbox
+                      checked={pauseOnHuman}
+                      onCheckedChange={(v) => setPauseOnHuman(v === true)}
+                    />
+                    <div>
+                      <p className="text-sm font-medium">Pausar a IA quando o vendedor entrar</p>
+                      <p className="text-xs text-muted-foreground">
+                        Assim que alguém do time responder — pelo Chat ou pelo celular — a IA para
+                        naquela conversa. Ela só volta quando você clicar em "Reativar IA".
                       </p>
                     </div>
                   </label>

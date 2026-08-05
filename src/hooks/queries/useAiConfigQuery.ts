@@ -30,6 +30,7 @@ export interface SaveAiConfigInput {
   system_prompt?: string | null;
   model?: string;
   openai_api_key?: string | null;
+  pause_ai_on_human_reply?: boolean;
   followup_enabled?: boolean;
   followup_timezone?: string;
   followup_window_start?: number;
