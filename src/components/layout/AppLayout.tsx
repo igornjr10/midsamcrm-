@@ -4,6 +4,7 @@ import {
   Building2, Megaphone, Moon, Sun, Eye,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useContactsRealtime } from "@/hooks/queries";
 import { useTheme } from "@/hooks/useTheme";
 import { Logo, LogoMark } from "@/components/layout/Logo";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,10 @@ export default function AppLayout() {
   const { user, company, ownCompany, isSuperAdmin, isImpersonating, loading, leaveCompany, signOut } =
     useAuth();
   const { resolved, toggleTheme } = useTheme();
+
+  // Uma assinatura só para o app inteiro: o contato muda sozinho quando o
+  // gatilho do banco identifica pagamento e move a etapa.
+  useContactsRealtime(company?.id);
 
   const groups = isSuperAdmin ? [...NAV_GROUPS, SUPER_ADMIN_GROUP] : NAV_GROUPS;
 

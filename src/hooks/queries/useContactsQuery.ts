@@ -9,9 +9,7 @@ export function contactsQueryKey(companyId: string | undefined) {
 }
 
 export function useContactsQuery(companyId: string | undefined) {
-  const queryClient = useQueryClient();
-
-  const query = useQuery({
+  return useQuery({
     queryKey: contactsQueryKey(companyId),
     queryFn: async () => {
       if (!companyId) return [];
@@ -28,11 +26,22 @@ export function useContactsQuery(companyId: string | undefined) {
     enabled: !!companyId,
     staleTime: 30_000,
   });
+}
 
-  // O contato muda sem ninguém clicar: o trigger do banco carimba pagamento e
-  // move a etapa quando o lead manda o comprovante. Sem escutar, o Pipeline
-  // ficava mostrando o card na coluna antiga até alguém recarregar a página —
-  // e o automático parecia não ter funcionado.
+/**
+ * Assina as mudanças de contato da empresa e invalida a lista.
+ *
+ * Mora fora do useContactsQuery e é chamado UMA vez, no AppLayout: o Pipeline
+ * monta o hook de contatos duas vezes (a página e o diálogo de etapas), e dois
+ * canais com o mesmo nome estouram dentro do efeito — o React derruba a árvore
+ * e a tela fica preta.
+ *
+ * Serve para o que muda sem ninguém clicar: o trigger do banco carimba o
+ * pagamento e move a etapa quando o lead manda o comprovante.
+ */
+export function useContactsRealtime(companyId: string | undefined) {
+  const queryClient = useQueryClient();
+
   useEffect(() => {
     if (!companyId) return;
 
@@ -51,8 +60,6 @@ export function useContactsQuery(companyId: string | undefined) {
       void supabase.removeChannel(channel);
     };
   }, [companyId, queryClient]);
-
-  return query;
 }
 
 export function useCreateContactMutation() {
