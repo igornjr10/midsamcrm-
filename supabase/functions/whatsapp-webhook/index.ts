@@ -634,22 +634,39 @@ async function maybeAiReply(
     });
   }
 
-  const callLlm = async (msgs: Array<Record<string, unknown>>) => {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: aiConfig.model || "gpt-4o-mini",
-        messages: msgs,
-        tools,
-        max_tokens: 300,
-        temperature: 0.7,
-      }),
-      signal: AbortSignal.timeout(30_000),
-    });
+  // Modelo que não aceita `tools` derrubava a resposta inteira: o SDR emudecia
+  // em vez de perder só as ferramentas. Agora a primeira recusa desliga as
+  // ferramentas e a conversa continua.
+  let useTools = true;
+
+  const callLlm = async (msgs: Array<Record<string, unknown>>): Promise<LlmResponse | null> => {
+    const post = (withTools: boolean) =>
+      fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: aiConfig.model || "gpt-4o-mini",
+          messages: msgs,
+          ...(withTools ? { tools } : {}),
+          max_tokens: 300,
+          temperature: 0.7,
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+
+    let res = await post(useTools);
+
+    if (!res.ok && useTools) {
+      const detalhe = (await res.text().catch(() => "")).slice(0, 400);
+      console.error("maybeAiReply: LLM error com tools", res.status, detalhe);
+      useTools = false;
+      res = await post(false);
+      if (res.ok) console.error("maybeAiReply: modelo não aceita tools; respondendo sem elas");
+    }
+
     if (!res.ok) {
       console.error("maybeAiReply: LLM error", res.status, await res.text().catch(() => ""));
       return null;
@@ -976,6 +993,190 @@ async function processChange(
   }
 }
 
+// Diagnóstico ponta a ponta de uma empresa: responde em qual etapa o SDR está
+// quebrando. Só booleanos, códigos de status e mensagens de erro do provedor.
+async function runSelftest(supabase: Db, verifyToken: string): Promise<Response> {
+  const { data: configRaw } = await supabase
+    .from("whatsapp_configs")
+    .select("company_id, user_id, phone_number_id, api_base_url, access_token")
+    .eq("webhook_verify_token", verifyToken)
+    .eq("active", true)
+    .maybeSingle();
+
+  const config = configRaw as (WhatsappConfig & { access_token: string }) | null;
+  if (!config) return new Response("Forbidden", { status: 403 });
+
+  const out: Record<string, unknown> = {};
+
+  // Token do WhatsApp: se expirou, o webhook continua recebendo mensagem (a
+  // Meta não precisa dele para entregar), mas tudo que SAI daqui morre — enviar
+  // resposta da IA, baixar mídia para o bucket, subir arquivo. Um sintoma só
+  // com três caras.
+  try {
+    const base = resolveApiBase(config.api_base_url);
+    const res = await fetch(`${base}/${config.phone_number_id}?fields=display_phone_number`, {
+      headers: { Authorization: `Bearer ${config.access_token}` },
+      signal: AbortSignal.timeout(20_000),
+    });
+    out.whatsapp_api = {
+      status: res.status,
+      ok: res.ok,
+      erro: res.ok ? null : (await res.text().catch(() => "")).slice(0, 300),
+    };
+  } catch (e) {
+    out.whatsapp_api = { erro: e instanceof Error ? e.message : "falha" };
+  }
+
+  const { data: aiRaw, error: aiError } = await supabase
+    .from("ai_configs")
+    .select("enabled, model, openai_api_key, followup_timezone, system_prompt")
+    .eq("company_id", config.company_id)
+    .maybeSingle();
+  const ai = aiRaw as AiConfig | null;
+
+  const key = ai?.openai_api_key?.trim() || Deno.env.get("OPENAI_API_KEY") || null;
+
+  out.ai_config = {
+    erro: aiError?.message ?? null,
+    encontrada: !!ai,
+    sdr_ligado: ai?.enabled ?? false,
+    modelo: ai?.model ?? null,
+    fuso: ai?.followup_timezone ?? null,
+    tem_prompt: !!ai?.system_prompt?.trim(),
+    // De onde vem a chave, nunca a chave.
+    chave: ai?.openai_api_key?.trim()
+      ? "ai_configs"
+      : Deno.env.get("OPENAI_API_KEY")
+      ? "variável de ambiente"
+      : "AUSENTE",
+  };
+
+  // Chamada real ao modelo, com as mesmas ferramentas do atendimento: pega
+  // chave inválida, crédito zerado e modelo que não aceita tools.
+  if (key) {
+    try {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        body: JSON.stringify({
+          model: ai?.model || "gpt-4o-mini",
+          messages: [{ role: "user", content: "responda ok" }],
+          tools: [CONSULTAR_DATA_TOOL, CONSULTAR_AGENDA_TOOL],
+          max_tokens: 5,
+        }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      out.openai_chat = {
+        status: res.status,
+        ok: res.ok,
+        erro: res.ok ? null : (await res.text().catch(() => "")).slice(0, 300),
+      };
+    } catch (e) {
+      out.openai_chat = { erro: e instanceof Error ? e.message : "falha" };
+    }
+
+    try {
+      const res = await fetch("https://api.openai.com/v1/models/whisper-1", {
+        headers: { Authorization: `Bearer ${key}` },
+        signal: AbortSignal.timeout(20_000),
+      });
+      out.openai_whisper = {
+        status: res.status,
+        ok: res.ok,
+        erro: res.ok ? null : (await res.text().catch(() => "")).slice(0, 300),
+      };
+    } catch (e) {
+      out.openai_whisper = { erro: e instanceof Error ? e.message : "falha" };
+    }
+  }
+
+  const { data: lib, error: libError } = await supabase.rpc("library_for_ai", {
+    p_company_id: config.company_id,
+  });
+  out.biblioteca = {
+    erro: libError?.message ?? null,
+    arquivos_ativos: (lib ?? []).length,
+  };
+
+  const agora = new Date();
+  const { error: agendaError } = await supabase.rpc("agenda_for_ai", {
+    p_company_id: config.company_id,
+    p_from: agora.toISOString(),
+    p_to: new Date(agora.getTime() + 86_400_000).toISOString(),
+  });
+  out.agenda = { erro: agendaError?.message ?? null };
+
+  // Trecho mais frágil do trigger que grava as mensagens: a regex.
+  const { error: matchError } = await supabase.rpc("closing_signal_match", {
+    p_company_id: config.company_id,
+    p_text: "acabei de fazer o pix, segue o comprovante",
+  });
+  out.sinal_fechamento = { erro: matchError?.message ?? null };
+
+  // Gravação de mensagem, ida e volta: é o trigger que roda aqui. As datas do
+  // contato usado são restauradas depois.
+  const { data: contactRaw } = await supabase
+    .from("contacts")
+    .select("id, last_interaction_at, last_inbound_at, last_outbound_at")
+    .eq("company_id", config.company_id)
+    .limit(1)
+    .maybeSingle();
+  const probe = contactRaw as {
+    id: string;
+    last_interaction_at: string | null;
+    last_inbound_at: string | null;
+    last_outbound_at: string | null;
+  } | null;
+
+  if (!probe) {
+    out.gravacao_mensagem = { erro: "nenhum contato para testar" };
+  } else {
+    const ref = `selftest-${crypto.randomUUID()}`;
+    const { error: insertError } = await supabase.from("conversations").insert({
+      user_id: config.user_id,
+      company_id: config.company_id,
+      contact_id: probe.id,
+      sender: "contact",
+      content: "[autoteste do webhook]",
+      channel: "whatsapp",
+      message_ref: ref,
+      metadata: { selftest: true },
+    } as never);
+
+    out.gravacao_mensagem = {
+      erro: insertError ? `${insertError.code}: ${insertError.message}` : null,
+    };
+
+    await supabase.from("conversations").delete().eq("message_ref", ref);
+    await supabase
+      .from("contacts")
+      .update({
+        last_interaction_at: probe.last_interaction_at,
+        last_inbound_at: probe.last_inbound_at,
+        last_outbound_at: probe.last_outbound_at,
+      })
+      .eq("id", probe.id);
+  }
+
+  // Bucket da biblioteca: existe e aceita escrita?
+  const testPath = `${config.company_id}/selftest.txt`;
+  const { error: upError } = await supabase.storage
+    .from("library")
+    .upload(testPath, new Blob(["ok"], { type: "text/plain" }), { upsert: true });
+  out.bucket_library = { erro: upError?.message ?? null };
+  if (!upError) await supabase.storage.from("library").remove([testPath]);
+
+  const { error: mediaError } = await supabase.storage
+    .from("chat-media")
+    .upload(`${config.company_id}/selftest.txt`, new Blob(["ok"], { type: "text/plain" }), { upsert: true });
+  out.bucket_chat_media = { erro: mediaError?.message ?? null };
+  if (!mediaError) {
+    await supabase.storage.from("chat-media").remove([`${config.company_id}/selftest.txt`]);
+  }
+
+  return json(out);
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -989,6 +1190,12 @@ Deno.serve(async (req: Request) => {
     const mode = url.searchParams.get("hub.mode");
     const token = url.searchParams.get("hub.verify_token");
     const challenge = url.searchParams.get("hub.challenge");
+
+    // Autoteste: sem acesso aos logs da função, é como se descobre qual etapa
+    // está falhando. Protegido pelo mesmo verify_token do handshake, e devolve
+    // só status — nunca chave nem conteúdo de conversa.
+    const selftest = url.searchParams.get("selftest");
+    if (selftest) return await runSelftest(supabase, selftest);
 
     const { data: configs } = await supabase
       .from("whatsapp_configs")
