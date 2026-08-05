@@ -5,6 +5,7 @@ import { AuthProvider } from "@/hooks/useAuth";
 import { ThemeProvider } from "@/hooks/useTheme";
 import { Toaster } from "@/components/ui/sonner";
 import AppLayout from "@/components/layout/AppLayout";
+import ErrorBoundary from "@/components/layout/ErrorBoundary";
 import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
 import Pipeline from "@/pages/Pipeline";
@@ -49,23 +50,26 @@ export default function App() {
       <ThemeProvider>
         <AuthProvider>
           <BrowserRouter>
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route path="/signup" element={<Signup />} />
-              <Route element={<AppLayout />}>
-                <Route path="/" element={<Pipeline />} />
-                <Route path="/contatos" element={<Contacts />} />
-                <Route path="/chat" element={<Chat />} />
-                <Route path="/agenda" element={<Agenda />} />
-                {/* Link antigo de Tarefas continua funcionando (favoritos, histórico). */}
-                <Route path="/tarefas" element={<Navigate to="/agenda" replace />} />
-                <Route path="/disparos" element={<Campaigns />} />
-                <Route path="/biblioteca" element={<Biblioteca />} />
-                <Route path="/sdr" element={<SdrIa />} />
-                <Route path="/empresas" element={<Companies />} />
-                <Route path="/configuracoes" element={<Settings />} />
-              </Route>
-            </Routes>
+            {/* Erro numa tela vira mensagem, não tela preta. */}
+            <ErrorBoundary>
+              <Routes>
+                <Route path="/login" element={<Login />} />
+                <Route path="/signup" element={<Signup />} />
+                <Route element={<AppLayout />}>
+                  <Route path="/" element={<Pipeline />} />
+                  <Route path="/contatos" element={<Contacts />} />
+                  <Route path="/chat" element={<Chat />} />
+                  <Route path="/agenda" element={<Agenda />} />
+                  {/* Link antigo de Tarefas continua funcionando (favoritos, histórico). */}
+                  <Route path="/tarefas" element={<Navigate to="/agenda" replace />} />
+                  <Route path="/disparos" element={<Campaigns />} />
+                  <Route path="/biblioteca" element={<Biblioteca />} />
+                  <Route path="/sdr" element={<SdrIa />} />
+                  <Route path="/empresas" element={<Companies />} />
+                  <Route path="/configuracoes" element={<Settings />} />
+                </Route>
+              </Routes>
+            </ErrorBoundary>
           </BrowserRouter>
           <Toaster position="top-right" />
         </AuthProvider>
