@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  Send, Search, Loader2, Bot, Play, FileText, MessageSquare, MessagesSquare, Mic, Library,
+  Send, Search, Loader2, Bot, Play, FileText, MessageSquare, MessagesSquare, Mic, Library, Paperclip,
 } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, SUPABASE_URL } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import {
   useContactsQuery,
@@ -20,6 +20,7 @@ import {
   type Contact, type LibraryItem,
 } from "@/lib/types";
 import SendTemplateDialog from "@/components/chat/SendTemplateDialog";
+import ContactPanel from "@/components/chat/ContactPanel";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -38,7 +39,7 @@ function timeLabel(iso: string): string {
 }
 
 export default function Chat() {
-  const { company, session } = useAuth();
+  const { user, company, session } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedContactId = searchParams.get("contato");
 
@@ -58,6 +59,7 @@ export default function Chat() {
   const [templateOpen, setTemplateOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const attachInput = useRef<HTMLInputElement>(null);
 
   const selectedContact: Contact | null =
     contacts.find((c) => c.id === selectedContactId) ?? null;
@@ -115,6 +117,58 @@ export default function Chat() {
       toast.success(`"${item.title}" enviado`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erro ao enviar arquivo");
+    }
+  };
+
+  // Anexo do atendente: sobe para o bucket e manda pela mesma rota de mídia que
+  // a biblioteca usa. O caminho começa com o id do usuário porque é isso que a
+  // policy do chat-media exige.
+  const handleAttach = async (file: File) => {
+    if (!selectedContact?.phone || !whatsappConfig || !user) {
+      toast.error("Contato sem telefone ou WhatsApp não conectado.");
+      return;
+    }
+    if (file.size > 16 * 1_048_576) {
+      toast.error("O WhatsApp não aceita arquivo acima de 16 MB");
+      return;
+    }
+
+    const mimetype = file.type || "application/octet-stream";
+    const mediaType = mimetype.startsWith("image/")
+      ? "image"
+      : mimetype.startsWith("audio/")
+      ? "audio"
+      : mimetype.startsWith("video/")
+      ? "video"
+      : "document";
+
+    setSending(true);
+    try {
+      const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
+      const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("chat-media")
+        .upload(path, file, { contentType: mimetype, upsert: false });
+      if (upErr) throw upErr;
+
+      const { data, error } = await supabase.functions.invoke("whatsapp-send?action=send-media", {
+        body: {
+          phone: selectedContact.phone,
+          contact_id: selectedContact.id,
+          company_id: company?.id,
+          mediaUrl: `${SUPABASE_URL}/storage/v1/object/public/chat-media/${path}`,
+          mediaType,
+          mimetype,
+          caption: mediaType === "audio" ? "" : file.name,
+        },
+      });
+      if (error || (data && data.success === false)) {
+        throw new Error((data?.error as string) || error?.message || "Falha ao enviar");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao enviar arquivo");
+    } finally {
+      setSending(false);
     }
   };
 
@@ -399,6 +453,27 @@ export default function Chat() {
               </div>
             </ScrollArea>
             <div className="flex items-center gap-2 border-t p-3">
+              <input
+                ref={attachInput}
+                type="file"
+                className="hidden"
+                accept="image/*,audio/ogg,audio/mpeg,audio/mp4,audio/aac,audio/amr,video/mp4,application/pdf"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) void handleAttach(file);
+                }}
+              />
+              <Button
+                size="icon"
+                variant="outline"
+                aria-label="Enviar imagem, áudio ou documento"
+                title="Imagem, áudio (ogg/mp3/m4a), vídeo ou PDF"
+                onClick={() => attachInput.current?.click()}
+                disabled={sending}
+              >
+                <Paperclip />
+              </Button>
               <Input
                 placeholder="Digite uma mensagem..."
                 value={newMessage}
@@ -418,6 +493,8 @@ export default function Chat() {
           </>
         )}
       </div>
+
+      {selectedContact && <ContactPanel contact={selectedContact} />}
 
       <SendTemplateDialog
         contact={selectedContact}

@@ -25,6 +25,8 @@ export interface Contact {
   closing_signal_at: string | null;
   closing_signal_label: string | null;
   closing_signal_excerpt: string | null;
+  /** "pagamento" quando o dinheiro apareceu na conversa; "intencao" quando só foi promessa. */
+  closing_signal_type: "pagamento" | "intencao" | null;
   created_at: string;
   updated_at: string;
 }

@@ -25,6 +25,29 @@ export function useAppointmentsQuery(companyId: string | undefined, range?: Appo
   });
 }
 
+/** Compromissos de um contato — usado no painel lateral do chat. */
+export function useContactAppointmentsQuery(
+  companyId: string | undefined,
+  contactId: string | undefined,
+) {
+  return useQuery({
+    queryKey: ["appointments", companyId, "contact", contactId] as const,
+    queryFn: async () => {
+      if (!companyId || !contactId) return [];
+      const { data, error } = await supabase
+        .from("appointments")
+        .select("*")
+        .eq("company_id", companyId)
+        .eq("contact_id", contactId)
+        .order("starts_at", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as Appointment[];
+    },
+    enabled: !!companyId && !!contactId,
+    staleTime: 30_000,
+  });
+}
+
 // As mutations invalidam ["appointments", companyId], que casa por prefixo com
 // todas as faixas já carregadas — mudar de mês não deixa dado velho para trás.
 function invalidate(queryClient: ReturnType<typeof useQueryClient>, companyId: string) {
