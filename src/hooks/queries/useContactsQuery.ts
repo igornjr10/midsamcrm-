@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { Contact } from "@/lib/types";
@@ -8,7 +9,9 @@ export function contactsQueryKey(companyId: string | undefined) {
 }
 
 export function useContactsQuery(companyId: string | undefined) {
-  return useQuery({
+  const queryClient = useQueryClient();
+
+  const query = useQuery({
     queryKey: contactsQueryKey(companyId),
     queryFn: async () => {
       if (!companyId) return [];
@@ -25,6 +28,31 @@ export function useContactsQuery(companyId: string | undefined) {
     enabled: !!companyId,
     staleTime: 30_000,
   });
+
+  // O contato muda sem ninguém clicar: o trigger do banco carimba pagamento e
+  // move a etapa quando o lead manda o comprovante. Sem escutar, o Pipeline
+  // ficava mostrando o card na coluna antiga até alguém recarregar a página —
+  // e o automático parecia não ter funcionado.
+  useEffect(() => {
+    if (!companyId) return;
+
+    const channel = supabase
+      .channel(`contacts-${companyId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "contacts", filter: `company_id=eq.${companyId}` },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: contactsQueryKey(companyId) });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [companyId, queryClient]);
+
+  return query;
 }
 
 export function useCreateContactMutation() {

@@ -998,7 +998,7 @@ async function processChange(
 
 // Diagnóstico ponta a ponta de uma empresa: responde em qual etapa o SDR está
 // quebrando. Só booleanos, códigos de status e mensagens de erro do provedor.
-async function runSelftest(supabase: Db, verifyToken: string): Promise<Response> {
+async function runSelftest(supabase: Db, verifyToken: string, textoTeste: string): Promise<Response> {
   const { data: configRaw } = await supabase
     .from("whatsapp_configs")
     .select("company_id, user_id, phone_number_id, api_base_url, access_token")
@@ -1109,12 +1109,32 @@ async function runSelftest(supabase: Db, verifyToken: string): Promise<Response>
   });
   out.agenda = { erro: agendaError?.message ?? null };
 
-  // Trecho mais frágil do trigger que grava as mensagens: a regex.
-  const { error: matchError } = await supabase.rpc("closing_signal_match", {
+  // Diagnóstico do funil automático: por que um pagamento não moveu a etapa.
+  // Aceita ?texto= para testar a frase exata que o lead mandou.
+  const { data: matchData, error: matchError } = await supabase.rpc("closing_signal_match", {
     p_company_id: config.company_id,
-    p_text: "acabei de fazer o pix, segue o comprovante",
+    p_text: textoTeste,
   });
-  out.sinal_fechamento = { erro: matchError?.message ?? null };
+  const match = ((matchData ?? []) as Array<{ label: string; signal_type: string }>)[0];
+
+  const { data: stagesData, error: stagesError } = await supabase
+    .from("pipeline_stages")
+    .select("key, name, kind, position")
+    .eq("company_id", config.company_id)
+    .order("position");
+  const stages = (stagesData ?? []) as Array<{ key: string; name: string; kind: string }>;
+  const etapaGanho = stages.find((s) => s.kind === "won");
+
+  out.funil_automatico = {
+    texto_testado: textoTeste,
+    casou: match?.label ?? null,
+    tipo: match?.signal_type ?? null,
+    move_etapa: match?.signal_type === "pagamento",
+    etapa_ganho: etapaGanho ? `${etapaGanho.name} (${etapaGanho.key})` : "NENHUMA ETAPA MARCADA COMO GANHO",
+    etapas: stages.map((s) => `${s.name} [${s.kind}]`),
+    auto_ligado: (ai as unknown as { auto_stage_on_payment?: boolean })?.auto_stage_on_payment ?? null,
+    erro: matchError?.message ?? stagesError?.message ?? null,
+  };
 
   // Gravação de mensagem, ida e volta: é o trigger que roda aqui. As datas do
   // contato usado são restauradas depois.
@@ -1198,7 +1218,11 @@ Deno.serve(async (req: Request) => {
     // está falhando. Protegido pelo mesmo verify_token do handshake, e devolve
     // só status — nunca chave nem conteúdo de conversa.
     const selftest = url.searchParams.get("selftest");
-    if (selftest) return await runSelftest(supabase, selftest);
+    if (selftest) {
+      const texto = url.searchParams.get("texto")?.trim() ||
+        "acabei de fazer o pix, segue o comprovante";
+      return await runSelftest(supabase, selftest, texto);
+    }
 
     const { data: configs } = await supabase
       .from("whatsapp_configs")
