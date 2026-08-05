@@ -417,10 +417,9 @@ Deno.serve(async (req: Request) => {
     const isCron =
       token === serviceKey || (!!cronSecret && req.headers.get("x-cron-secret") === cronSecret);
 
-    const selectFields =
-      "company_id, enabled, system_prompt, model, openai_api_key, followup_enabled, " +
-      "followup_timezone, followup_window_start, followup_window_end, followup_skip_weekends, " +
-      "followup_only_open_stages";
+    // `*` pelo mesmo motivo do webhook: uma coluna ausente derruba o select
+    // inteiro, e aí o runner roda sem config nenhuma.
+    const selectFields = "*";
 
     let configs: AiConfig[] = [];
 

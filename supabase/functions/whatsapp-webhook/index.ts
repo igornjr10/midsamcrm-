@@ -818,7 +818,10 @@ async function processChange(
   // para o humano ler no chat de qualquer forma.
   const { data: aiConfigRaw } = await supabase
     .from("ai_configs")
-    .select("enabled, system_prompt, model, openai_api_key, followup_timezone")
+    // `*` de propósito: pedir coluna a coluna derruba o select inteiro se uma
+    // delas não existir no banco — foi assim que o SDR ficou mudo, sem config
+    // nenhuma, por causa de followup_timezone.
+    .select("*")
     .eq("company_id", config.company_id)
     .maybeSingle();
   const aiConfig = aiConfigRaw as AiConfig | null;
@@ -1029,7 +1032,7 @@ async function runSelftest(supabase: Db, verifyToken: string): Promise<Response>
 
   const { data: aiRaw, error: aiError } = await supabase
     .from("ai_configs")
-    .select("enabled, model, openai_api_key, followup_timezone, system_prompt")
+    .select("*")
     .eq("company_id", config.company_id)
     .maybeSingle();
   const ai = aiRaw as AiConfig | null;
