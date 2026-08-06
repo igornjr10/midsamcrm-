@@ -39,6 +39,7 @@ export default function SdrIa() {
   const [model, setModel] = useState("gpt-4o-mini");
   const [apiKey, setApiKey] = useState("");
   const [pauseOnHuman, setPauseOnHuman] = useState(true);
+  const [onlyOpenStages, setOnlyOpenStages] = useState(true);
 
   useEffect(() => {
     if (!config) return;
@@ -47,6 +48,7 @@ export default function SdrIa() {
     setModel(config.model);
     setApiKey(config.openai_api_key ?? "");
     setPauseOnHuman(config.pause_ai_on_human_reply ?? true);
+    setOnlyOpenStages(config.ai_only_open_stages ?? true);
   }, [config]);
 
   const handleSave = async () => {
@@ -63,6 +65,7 @@ export default function SdrIa() {
         model,
         openai_api_key: apiKey.trim() || null,
         pause_ai_on_human_reply: pauseOnHuman,
+        ai_only_open_stages: onlyOpenStages,
       });
       toast.success(enabled ? "SDR IA ligado! Novas mensagens de leads serão respondidas automaticamente." : "Configuração salva.");
     } catch (err) {
@@ -151,6 +154,26 @@ export default function SdrIa() {
                       <p className="text-xs text-muted-foreground">
                         Assim que alguém do time responder — pelo Chat ou pelo celular — a IA para
                         naquela conversa. Ela só volta quando você clicar em "Reativar IA".
+                      </p>
+                    </div>
+                  </label>
+
+                  <label
+                    className={cn(
+                      "flex cursor-pointer items-center gap-3 rounded-lg border p-3.5 transition-colors",
+                      onlyOpenStages ? "border-primary/40 bg-primary/5" : "hover:bg-accent/50",
+                    )}
+                  >
+                    <Checkbox
+                      checked={onlyOpenStages}
+                      onCheckedChange={(v) => setOnlyOpenStages(v === true)}
+                    />
+                    <div>
+                      <p className="text-sm font-medium">Não falar com negócio já fechado</p>
+                      <p className="text-xs text-muted-foreground">
+                        A IA ignora contatos em etapa de Ganho ou Perdido, inclusive quando foi o
+                        próprio funil que moveu o contato depois do pagamento. Reabriu o negócio, a
+                        IA volta sozinha.
                       </p>
                     </div>
                   </label>

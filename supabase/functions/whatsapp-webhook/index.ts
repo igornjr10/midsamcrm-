@@ -72,6 +72,8 @@ type AiConfig = {
   openai_api_key: string | null;
   /** Fuso da empresa: define que dia é "hoje" para a IA. */
   followup_timezone: string | null;
+  /** A IA não fala com contato em etapa de Ganho ou Perdido. */
+  ai_only_open_stages: boolean | null;
 };
 
 async function updateDeliveryStatus(
@@ -567,6 +569,18 @@ async function maybeAiReply(
 ): Promise<void> {
   if (contact.ai_paused) return;
   if (!aiConfig?.enabled) return;
+
+  // Negócio já fechado (Ganho ou Perdido): a etapa vale como resposta mesmo sem
+  // ninguém do time ter escrito — é o caso do funil automático da 0024, que
+  // move o contato sozinho quando o pagamento aparece e deixaria a IA
+  // conversando com quem já comprou.
+  if (aiConfig.ai_only_open_stages !== false) {
+    const { data: closed } = await supabase.rpc("contact_in_closed_stage", {
+      p_contact_id: contact.id,
+    });
+    if (closed === true) return;
+  }
+
   if (!apiKey) {
     console.error("maybeAiReply: sem OPENAI_API_KEY configurada");
     return;
@@ -1048,6 +1062,7 @@ async function runSelftest(supabase: Db, verifyToken: string, textoTeste: string
     // Explica o SDR mudo numa conversa específica: o vendedor respondeu antes.
     pausa_quando_humano_responde:
       (ai as unknown as { pause_ai_on_human_reply?: boolean })?.pause_ai_on_human_reply ?? null,
+    so_responde_etapa_aberta: ai?.ai_only_open_stages ?? null,
     tem_prompt: !!ai?.system_prompt?.trim(),
     // De onde vem a chave, nunca a chave.
     chave: ai?.openai_api_key?.trim()

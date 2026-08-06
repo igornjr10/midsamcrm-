@@ -128,6 +128,8 @@ export interface AiConfig {
   openai_api_key: string | null;
   /** Pausa a IA no contato assim que um atendente humano responde a conversa. */
   pause_ai_on_human_reply: boolean;
+  /** A IA não responde nem faz follow-up de contato em etapa de Ganho ou Perdido. */
+  ai_only_open_stages: boolean;
   // Follow-up automático (cadência de cobrança de quem parou de responder).
   followup_enabled: boolean;
   followup_timezone: string;

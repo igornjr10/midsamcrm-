@@ -14,6 +14,7 @@ import {
   useUpdateContactMutation,
   usePipelineStagesQuery,
   useLibraryQuery,
+  useAiConfigQuery,
 } from "@/hooks/queries";
 import {
   getStageLabel, getStageTone, getToneClasses, LIBRARY_KINDS,
@@ -50,6 +51,7 @@ export default function Chat() {
   const { data: whatsappConfig } = useWhatsappConfigQuery(company?.id);
   const { data: stages = [] } = usePipelineStagesQuery(company?.id);
   const { data: library = [] } = useLibraryQuery(company?.id);
+  const { data: aiConfig } = useAiConfigQuery(company?.id);
   const updateContact = useUpdateContactMutation();
 
   const activeLibrary = useMemo(() => library.filter((i) => i.active), [library]);
@@ -64,6 +66,15 @@ export default function Chat() {
 
   const selectedContact: Contact | null =
     contacts.find((c) => c.id === selectedContactId) ?? null;
+
+  // A IA também cala em negócio fechado, e isso não passa por ai_paused: é a
+  // etapa que decide, a cada mensagem. Sem dizer aqui, some sem explicação.
+  const selectedStage = stages.find((s) => s.key === selectedContact?.stage);
+  const silencedByStage =
+    !!aiConfig?.enabled &&
+    (aiConfig.ai_only_open_stages ?? true) &&
+    !!selectedStage &&
+    selectedStage.kind !== "open";
 
   const orderedContacts = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -392,8 +403,10 @@ export default function Chat() {
                 </Button>
               </div>
             </div>
-            {/* A IA parou sozinha: sem dizer isso, o silêncio dela parece defeito. */}
-            {selectedContact.ai_paused && selectedContact.ai_paused_reason === "humano_respondeu" && (
+            {/* A IA parou sozinha: sem dizer isso, o silêncio dela parece defeito.
+                Um aviso de cada vez — quem assumiu a conversa manda, porque é o
+                único dos dois que tem botão para desfazer aqui. */}
+            {selectedContact.ai_paused && selectedContact.ai_paused_reason === "humano_respondeu" ? (
               <div className="flex items-center gap-2 border-b bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-400">
                 <Bot className="h-3.5 w-3.5 shrink-0" />
                 <span>
@@ -402,7 +415,15 @@ export default function Chat() {
                   Clique em "Reativar IA" para devolver o atendimento a ela.
                 </span>
               </div>
-            )}
+            ) : silencedByStage ? (
+              <div className="flex items-center gap-2 border-b bg-muted px-4 py-2 text-xs text-muted-foreground">
+                <Bot className="h-3.5 w-3.5 shrink-0" />
+                <span>
+                  IA em silêncio: o negócio está em "{selectedStage?.name}". Volte o contato para uma
+                  etapa aberta se quiser que ela responda de novo.
+                </span>
+              </div>
+            ) : null}
             <ScrollArea className="flex-1 bg-muted/30 p-4">
               <div className="flex min-h-full flex-col justify-end gap-1.5">
                 {messages.map((m) => {
