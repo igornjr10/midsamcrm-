@@ -4,10 +4,13 @@
 // tempo e devolve o offset seguinte, que o front usa para continuar. Sem isso a
 // função morre no timeout em qualquer conta com movimento.
 //
-// Só texto e legenda entram. Mídia histórica ficaria cara demais — cada arquivo
-// exige uma chamada de download e um upload para o bucket, e são centenas.
-// Mensagem de mídia entra com o rótulo ([Áudio], [Imagem]) e o que chegar dali
-// para frente, pelo webhook, vem com o arquivo.
+// Mídia entra também: cada arquivo custa um download na UAZAPI mais um upload
+// para o bucket, então há um teto por chamada — o lote seguinte continua de
+// onde parou, e uma conta com muito áudio simplesmente leva mais rodadas.
+//
+// O que não entra é transcrição de áudio antigo: seriam centenas de chamadas
+// pagas à OpenAI de uma vez. Áudio histórico dá para ouvir; o que chegar pelo
+// webhook daqui para frente continua sendo transcrito.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { resolveCompanyId } from "../_shared/company.ts";
 import * as uaz from "../_shared/uazapi.ts";
@@ -29,6 +32,47 @@ function json(body: unknown, status = 200): Response {
 const BUDGET_MS = 45_000;
 const CHATS_PER_CALL = 25;
 const MESSAGES_PER_CHAT = 200;
+/** Teto de arquivos por chamada: o resto fica para o lote seguinte. */
+const MEDIA_PER_CALL = 30;
+
+const EXT_BY_MIME: Record<string, string> = {
+  "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
+  "video/mp4": "mp4", "audio/ogg": "ogg", "audio/mpeg": "mp3",
+  "audio/mp4": "m4a", "application/pdf": "pdf",
+};
+
+// Sem os genéricos explícitos o ReturnType resolve para os defaults (never) e
+// não aceita o cliente real — mesmo motivo do alias no whatsapp-webhook.
+// deno-lint-ignore no-explicit-any
+type Db = ReturnType<typeof createClient<any, "public", any>>;
+
+/** Baixa da UAZAPI e sobe para o bucket, devolvendo a URL pública. */
+async function storeMedia(
+  admin: Db,
+  target: uaz.UazapiTarget,
+  supabaseUrl: string,
+  companyId: string,
+  messageId: string,
+): Promise<{ url: string; mime: string } | null> {
+  const link = await uaz.downloadMedia(target, messageId);
+  if (!link) return null;
+  try {
+    const res = await fetch(link.fileURL, { signal: AbortSignal.timeout(30_000) });
+    if (!res.ok) return null;
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const mime = (link.mimetype || "application/octet-stream").split(";")[0].trim();
+    const path = `${companyId}/${messageId}.${EXT_BY_MIME[mime] ?? "bin"}`;
+
+    const { error } = await admin.storage
+      .from("chat-media")
+      .upload(path, bytes, { contentType: mime, upsert: true });
+    if (error) return null;
+
+    return { url: `${supabaseUrl}/storage/v1/object/public/chat-media/${path}`, mime };
+  } catch {
+    return null;
+  }
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -83,6 +127,7 @@ Deno.serve(async (req: Request) => {
     let importedMessages = 0;
     let processedChats = 0;
     let createdContacts = 0;
+    let mediaDone = 0;
 
     for (const chat of chats) {
       processedChats += 1;
@@ -128,16 +173,59 @@ Deno.serve(async (req: Request) => {
       const ids = messages.map((m) => m.messageid).filter(Boolean);
       const { data: existing } = await admin
         .from("conversations")
-        .select("message_ref")
+        .select("id, message_ref, metadata")
         .eq("company_id", companyId)
         .in("message_ref", ids);
-      const known = new Set(
-        ((existing ?? []) as Array<{ message_ref: string }>).map((r) => r.message_ref),
+      const existingRows = (existing ?? []) as Array<{
+        id: string; message_ref: string; metadata: Record<string, unknown> | null;
+      }>;
+      const known = new Set(existingRows.map((r) => r.message_ref));
+
+      // Quem já foi importado antes de a mídia entrar no escopo ficou só com o
+      // rótulo. Reimportar preenche o arquivo em vez de pular a linha.
+      const semArquivo = new Map(
+        existingRows
+          .filter((r) => !(r.metadata && typeof r.metadata === "object" && r.metadata.mediaUrl))
+          .map((r) => [r.message_ref, r]),
       );
 
-      const rows = messages
-        .filter((m) => m.messageid && !known.has(m.messageid))
-        .map((m) => ({
+      for (const m of messages) {
+        if (mediaDone >= MEDIA_PER_CALL) break;
+        const alvo = semArquivo.get(m.messageid);
+        const kind = uaz.messageKind(m.messageType);
+        if (!alvo || kind === "text" || kind === "other") continue;
+
+        mediaDone += 1;
+        const media = await storeMedia(admin, target, supabaseUrl, companyId, m.messageid);
+        if (!media) continue;
+
+        await admin
+          .from("conversations")
+          .update({
+            metadata: {
+              ...(alvo.metadata ?? {}),
+              mediaType: kind,
+              mediaUrl: media.url,
+              mimetype: media.mime,
+            },
+          })
+          .eq("id", alvo.id);
+      }
+
+      const novas = messages.filter((m) => m.messageid && !known.has(m.messageid));
+      const rows: Array<Record<string, unknown>> = [];
+
+      for (const m of novas) {
+        const kind = uaz.messageKind(m.messageType);
+        let media: { url: string; mime: string } | null = null;
+
+        // Sem o arquivo, áudio e imagem antigos viram só um rótulo na tela.
+        if (kind !== "text" && kind !== "other" && mediaDone < MEDIA_PER_CALL) {
+          mediaDone += 1;
+          media = await storeMedia(admin, target, supabaseUrl, companyId, m.messageid);
+        }
+
+        rows.push({
           user_id: config.user_id,
           company_id: companyId,
           contact_id: contactId,
@@ -152,11 +240,11 @@ Deno.serve(async (req: Request) => {
           metadata: {
             imported: true,
             waType: m.messageType,
-            ...(uaz.messageKind(m.messageType) !== "text"
-              ? { mediaType: uaz.messageKind(m.messageType) }
-              : {}),
+            ...(kind !== "text" ? { mediaType: kind } : {}),
+            ...(media ? { mediaUrl: media.url, mimetype: media.mime } : {}),
           },
-        }));
+        });
+      }
 
       if (rows.length > 0) {
         const { error: insertError } = await admin.from("conversations").insert(rows as never);
@@ -177,6 +265,7 @@ Deno.serve(async (req: Request) => {
       processed_chats: processedChats,
       imported_messages: importedMessages,
       created_contacts: createdContacts,
+      media_files: mediaDone,
     });
   } catch (error) {
     console.error("whatsapp-history error:", error instanceof Error ? error.message : "unknown");
