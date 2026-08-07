@@ -7,7 +7,8 @@
 // dona da mensagem é resolvida pelo metadata.phone_number_id do payload.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import {
-  CONSULTAR_AGENDA_TOOL, CONSULTAR_DATA_TOOL, dayRange, describeDate, todayBrief,
+  CONSULTAR_AGENDA_TOOL, CONSULTAR_DATA_TOOL, REGISTRAR_AGENDAMENTO_TOOL,
+  dayRange, describeDate, localDateTime, todayBrief,
 } from "../_shared/date.ts";
 import * as evo from "../_shared/evolution.ts";
 
@@ -618,6 +619,58 @@ async function sendWhatsappMedia(
   }
 }
 
+/**
+ * Grava na agenda o horário que o lead pediu, como pendência.
+ *
+ * status 'pending' é o ponto todo: a IA não marca compromisso, ela deixa o
+ * pedido no lugar onde a equipe já olha. Confirmar (-> 'scheduled') ou recusar
+ * (-> 'canceled') continua sendo decisão de gente.
+ */
+async function registerAppointmentRequest(
+  supabase: Db,
+  config: WhatsappConfig,
+  contactId: string,
+  startsAt: string,
+  quando: string,
+  assunto: string,
+): Promise<Record<string, unknown>> {
+  const { data: contactRow } = await supabase
+    .from("contacts")
+    .select("name")
+    .eq("id", contactId)
+    .maybeSingle();
+  const nome = (contactRow as { name?: string } | null)?.name?.trim() || "lead";
+
+  // O lead costuma repetir o horário na mensagem seguinte; sem isto, cada
+  // repetição viraria uma pendência nova para a mesma coisa.
+  const { data: existing } = await supabase
+    .from("appointments")
+    .select("id")
+    .eq("company_id", config.company_id)
+    .eq("contact_id", contactId)
+    .eq("status", "pending")
+    .eq("starts_at", startsAt)
+    .maybeSingle();
+  if (existing?.id) return { ok: true, ja_registrado: true, quando };
+
+  const { error } = await supabase.from("appointments").insert({
+    user_id: config.user_id,
+    company_id: config.company_id,
+    contact_id: contactId,
+    title: `${assunto.trim() || "Atendimento"} — ${nome}`,
+    description: `Pedido pelo lead no WhatsApp: ${quando}.`,
+    kind: "meeting",
+    starts_at: startsAt,
+    status: "pending",
+  });
+  if (error) {
+    console.error("registerAppointmentRequest falhou", error.message);
+    return { erro: "não foi possível registrar" };
+  }
+
+  return { ok: true, quando };
+}
+
 // SDR IA: gera e envia a resposta automática quando habilitada para a empresa.
 async function maybeAiReply(
   supabase: Db,
@@ -676,7 +729,9 @@ async function maybeAiReply(
         `\n\n${todayBrief(timezone)} Ao falar de datas, use sempre o ano corrente. ` +
         "Chame consultar_data antes de afirmar em que dia da semana uma data cai, e " +
         "consultar_agenda antes de dizer que uma data está livre ou ocupada. " +
-        "Nunca confirme uma reserva por conta própria: diga que vai confirmar com a equipe." +
+        "Nunca confirme uma reserva por conta própria: diga que vai confirmar com a equipe. " +
+        "Quando o lead propuser um dia (com ou sem horário), chame registrar_agendamento " +
+        "para abrir a tarefa de confirmação antes de responder." +
         libraryBrief,
     },
     ...((history ?? []) as Array<{ sender: string; content: string }>)
@@ -688,7 +743,9 @@ async function maybeAiReply(
       })),
   ];
 
-  const tools: Array<Record<string, unknown>> = [CONSULTAR_DATA_TOOL, CONSULTAR_AGENDA_TOOL];
+  const tools: Array<Record<string, unknown>> = [
+    CONSULTAR_DATA_TOOL, CONSULTAR_AGENDA_TOOL, REGISTRAR_AGENDAMENTO_TOOL,
+  ];
   if (library.length > 0) {
     tools.push({
         type: "function",
@@ -762,10 +819,14 @@ async function maybeAiReply(
   };
 
   try {
-    // Consultar data devolve o resultado ao modelo e ele continua escrevendo;
-    // enviar arquivo encerra o turno. Três voltas bastam e limitam o gasto se o
-    // modelo entrar em laço de consultas.
-    for (let round = 0; round < 3; round += 1) {
+    // Consultar data/agenda e registrar agendamento devolvem o resultado ao
+    // modelo e ele continua escrevendo; enviar arquivo encerra o turno.
+    //
+    // Cinco voltas porque um pedido de horário gasta três sozinho
+    // (consultar_data -> consultar_agenda -> registrar_agendamento) e ainda
+    // precisa de uma para responder ao lead. O teto continua existindo para
+    // limitar o gasto se o modelo entrar em laço de consultas.
+    for (let round = 0; round < 5; round += 1) {
       const data = await callLlm(messages);
       const choice = data?.choices?.[0]?.message;
       if (!choice) return;
@@ -803,6 +864,42 @@ async function maybeAiReply(
           };
         }
 
+        messages.push({
+          role: "assistant",
+          content: choice.content ?? null,
+          tool_calls: choice.tool_calls,
+        });
+        messages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: JSON.stringify(result),
+        });
+        continue;
+      }
+
+      if (call?.function?.name === "registrar_agendamento") {
+        const args = JSON.parse(call.function.arguments || "{}") as {
+          data?: string; hora?: string; assunto?: string;
+        };
+        const info = describeDate(args.data ?? "", timezone);
+
+        let result: Record<string, unknown>;
+        if (!info) {
+          result = { erro: "data não reconhecida" };
+        } else {
+          const hora = args.hora?.trim();
+          result = await registerAppointmentRequest(
+            supabase,
+            config,
+            contact.id,
+            localDateTime(info, hora, timezone),
+            `${info.dia_semana}, ${info.data}${hora ? ` às ${hora}` : " (sem horário definido)"}`,
+            args.assunto ?? "",
+          );
+        }
+
+        // Devolve ao modelo e segue: ele ainda precisa responder ao lead que
+        // vai confirmar. Sem isto o turno acabaria sem resposta nenhuma.
         messages.push({
           role: "assistant",
           content: choice.content ?? null,

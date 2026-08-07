@@ -115,6 +115,28 @@ function tzOffsetMs(date: Date, timezone: string): number {
   return comoUTC - date.getTime();
 }
 
+/**
+ * Instante UTC de uma data + hora no fuso da empresa.
+ *
+ * Sem hora, cai às 9h — a tarefa aparece no começo do expediente em vez de à
+ * meia-noite, que numa lista ordenada por horário parece campo vazio.
+ */
+export function localDateTime(
+  info: DateInfo,
+  hora: string | null | undefined,
+  timezone = DEFAULT_TZ,
+): string {
+  const [dia, mes, ano] = info.data.split("/").map(Number);
+
+  // "15:00", "15h", "15h30", "15" — o modelo escreve de todo jeito.
+  const m = (hora ?? "").trim().match(/^(\d{1,2})(?:[:h.](\d{1,2}))?/);
+  const h = m ? Math.min(23, Number(m[1])) : 9;
+  const min = m?.[2] ? Math.min(59, Number(m[2])) : 0;
+
+  const offset = tzOffsetMs(new Date(Date.UTC(ano, mes - 1, dia, 12)), timezone);
+  return new Date(Date.UTC(ano, mes - 1, dia, h, min, 0) - offset).toISOString();
+}
+
 /** Início e fim (UTC) do dia local — janela para consultar a agenda. */
 export function dayRange(
   info: DateInfo,
@@ -146,6 +168,42 @@ export const CONSULTAR_AGENDA_TOOL = {
         },
       },
       required: ["data"],
+    },
+  },
+};
+
+/**
+ * A IA não escreve na agenda — ela abre uma tarefa para a equipe confirmar.
+ *
+ * O prompt já mandava "diga que vai confirmar com a equipe", mas isso não
+ * produzia nada: a intenção do lead ficava só no texto da conversa, e se
+ * ninguém abrisse aquele chat o pedido morria ali.
+ */
+export const REGISTRAR_AGENDAMENTO_TOOL = {
+  type: "function",
+  function: {
+    name: "registrar_agendamento",
+    description:
+      "Registra que o lead pediu um dia/horário, criando uma tarefa para a equipe confirmar. " +
+      "Chame assim que o lead propuser uma data — você não marca na agenda, quem confirma é a equipe. " +
+      "Depois de chamar, responda ao lead dizendo que vai confirmar.",
+    parameters: {
+      type: "object",
+      properties: {
+        data: {
+          type: "string",
+          description: "A data pedida, como 2026-08-09, 09/08/2026 ou 09/08",
+        },
+        hora: {
+          type: "string",
+          description: "O horário pedido, como 15:00. Deixe vazio se o lead não disse.",
+        },
+        assunto: {
+          type: "string",
+          description: "Em poucas palavras, o que o lead quer marcar (ex.: visita, corte, orçamento)",
+        },
+      },
+      required: ["data", "assunto"],
     },
   },
 };

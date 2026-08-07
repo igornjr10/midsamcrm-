@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import {
-  Ban, CalendarDays, ChevronLeft, ChevronRight, Clock, MapPin, Plus, Trash2, User,
+  Ban, CalendarDays, CheckCheck, ChevronLeft, ChevronRight, Clock, MapPin, Plus, Trash2, User,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -101,10 +101,13 @@ export default function Agenda() {
   const todayKey = dayKey(new Date());
   const selectedKey = dayKey(selectedDay);
   const selectedItems = byDay.get(selectedKey) ?? [];
+  // Pendência conta como compromisso: um dia que só tem pedido do lead
+  // aparecendo como "0 hoje" esconde justamente o que precisa de atenção.
+  const isOpen = (s: Appointment["status"]) => s === "scheduled" || s === "pending";
   const monthCount = appointments.filter(
-    (a) => new Date(a.starts_at).getMonth() === monthCursor.getMonth() && a.status === "scheduled",
+    (a) => new Date(a.starts_at).getMonth() === monthCursor.getMonth() && isOpen(a.status),
   ).length;
-  const todayCount = (byDay.get(todayKey) ?? []).filter((a) => a.status === "scheduled").length;
+  const todayCount = (byDay.get(todayKey) ?? []).filter((a) => isOpen(a.status)).length;
 
   const [form, setForm] = useState({
     title: "",
@@ -262,13 +265,15 @@ export default function Agenda() {
                           className={cn(
                             "h-1.5 w-1.5 shrink-0 rounded-full",
                             KINDS[item.kind]?.dot ?? KINDS.other.dot,
-                            item.status !== "scheduled" && "opacity-40",
+                            // Pendência não é apagada: é o que mais precisa ser visto.
+                            !isOpen(item.status) && "opacity-40",
                           )}
                         />
                         <span
                           className={cn(
                             "truncate",
                             item.status === "canceled" && "text-muted-foreground line-through",
+                            item.status === "pending" && "font-medium text-primary",
                           )}
                         >
                           {!item.all_day && `${hhmm(item.starts_at)} `}
@@ -318,6 +323,8 @@ export default function Agenda() {
               {selectedItems.map((item) => {
                 const done = item.status === "done";
                 const canceled = item.status === "canceled";
+                // Pedido do lead que o SDR IA registrou: ainda não é compromisso.
+                const pending = item.status === "pending";
                 const contactName = item.contact_id ? contactNameById.get(item.contact_id) : undefined;
                 return (
                   <div
@@ -325,12 +332,13 @@ export default function Agenda() {
                     className={cn(
                       "group rounded-lg border p-3 transition-colors",
                       (done || canceled) && "bg-muted/40",
+                      pending && "border-primary/40 bg-primary/5",
                     )}
                   >
                     <div className="flex items-start gap-2.5">
                       <Checkbox
                         checked={done}
-                        disabled={canceled}
+                        disabled={canceled || pending}
                         onCheckedChange={(v) => patchStatus(item, v === true ? "done" : "scheduled")}
                         aria-label={done ? "Reabrir compromisso" : "Concluir compromisso"}
                         className="mt-0.5"
@@ -373,6 +381,17 @@ export default function Agenda() {
                           <Badge variant="outline" className="mt-2">
                             Cancelado
                           </Badge>
+                        )}
+                        {pending && (
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <Badge variant="outline" className="border-primary/50 text-primary">
+                              A confirmar
+                            </Badge>
+                            <Button size="sm" onClick={() => patchStatus(item, "scheduled")}>
+                              <CheckCheck />
+                              Confirmar
+                            </Button>
+                          </div>
                         )}
                       </div>
                       <div className="flex shrink-0 flex-col gap-1">

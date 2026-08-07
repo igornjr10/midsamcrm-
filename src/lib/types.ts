@@ -82,7 +82,8 @@ export interface Conversation {
 }
 
 export type AppointmentKind = "meeting" | "call" | "visit" | "followup" | "other";
-export type AppointmentStatus = "scheduled" | "done" | "canceled";
+/** pending = pedido do lead que o SDR IA registrou, aguardando confirmação. */
+export type AppointmentStatus = "pending" | "scheduled" | "done" | "canceled";
 
 export interface Appointment {
   id: string;
