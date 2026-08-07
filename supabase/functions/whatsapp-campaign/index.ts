@@ -18,6 +18,7 @@ import {
   type VariableMap,
 } from "../_shared/whatsapp-template.ts";
 import * as evo from "../_shared/evolution.ts";
+import * as uaz from "../_shared/uazapi.ts";
 
 /** Mesma convenção do follow-up de texto (sdr-followup/renderMessage). */
 function renderPlaceholders(template: string, contactName: string | null): string {
@@ -105,7 +106,8 @@ Deno.serve(async (req: Request) => {
         .select("provider")
         .eq("company_id", companyId)
         .maybeSingle();
-      const isEvolution = (providerRow as { provider?: string } | null)?.provider === "evolution";
+      const createProvider = (providerRow as { provider?: string } | null)?.provider;
+      const isEvolution = createProvider === "evolution" || createProvider === "uazapi";
 
       if (isEvolution) {
         if (!(body.template_body as string | undefined)?.trim()) {
@@ -208,11 +210,18 @@ Deno.serve(async (req: Request) => {
     if (!config?.active) {
       return json({ error: "WhatsApp não configurado ou desativado." }, 400);
     }
+    // Os dois provedores de instância mandam texto livre; só a Meta tem template.
     const isEvolution = config.provider === "evolution";
+    const isUazapi = config.provider === "uazapi";
+    const freeText = isEvolution || isUazapi;
     const evoTarget: evo.EvolutionTarget = {
       base: config.api_base_url as string,
       apikey: (config.instance_token as string) ?? "",
       instance: (config.instance_name as string) ?? "",
+    };
+    const uazTarget: uaz.UazapiTarget = {
+      base: config.api_base_url as string,
+      token: (config.instance_token as string) ?? "",
     };
 
     const batchSize = Math.min(Number(body.batch_size) || DEFAULT_BATCH_SIZE, 50);
@@ -257,7 +266,7 @@ Deno.serve(async (req: Request) => {
       // No Evolution a campanha é texto livre, com os mesmos placeholders do
       // follow-up ({{nome}}, {{primeiro_nome}}); na Meta são as variáveis
       // numeradas do template, que o buildTemplatePayload já resolveu.
-      const renderedText = isEvolution
+      const renderedText = freeText
         ? renderPlaceholders(campaign.template_body ?? "", contact.name)
         : campaign.template_body
           ? renderTemplateText(campaign.template_body, bodyParams)
@@ -266,8 +275,10 @@ Deno.serve(async (req: Request) => {
       try {
         let wamid: string | null;
 
-        if (isEvolution) {
-          const { messageId, error } = await evo.sendText(evoTarget, target.phone, renderedText);
+        if (freeText) {
+          const { messageId, error } = isUazapi
+            ? await uaz.sendText(uazTarget, target.phone, renderedText)
+            : await evo.sendText(evoTarget, target.phone, renderedText);
           if (error) throw new Error(error);
           wamid = messageId;
         } else {
@@ -304,8 +315,8 @@ Deno.serve(async (req: Request) => {
             message_ref: wamid,
             metadata: {
               deliveryStatus: "sent",
-              isTemplate: !isEvolution,
-              ...(isEvolution ? {} : { template: campaign.template_name }),
+              isTemplate: !freeText,
+              ...(freeText ? {} : { template: campaign.template_name }),
               campaignId,
             },
           });

@@ -55,7 +55,8 @@ export default function NewCampaignDialog({
   const { data: templates = [], isPending: templatesLoading, error: templatesError } =
     useWhatsappTemplatesQuery(company?.id);
   const { data: waConfig } = useWhatsappConfigQuery(company?.id);
-  const isEvolution = waConfig?.provider === "evolution";
+  // Conectado por QR (Evolution ou UAZAPI): não existe template aprovado.
+  const isEvolution = waConfig?.provider === "evolution" || waConfig?.provider === "uazapi";
 
   const [name, setName] = useState("");
   const [templateName, setTemplateName] = useState("");

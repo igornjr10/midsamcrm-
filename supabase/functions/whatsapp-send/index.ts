@@ -14,6 +14,7 @@ import { assertWhatsAppResponse } from "../_shared/whatsapp-error.ts";
 import { normalizePhone } from "../_shared/phone.ts";
 import { resolveCompanyId } from "../_shared/company.ts";
 import * as evo from "../_shared/evolution.ts";
+import * as uaz from "../_shared/uazapi.ts";
 import {
   buildTemplatePayload,
   renderTemplateText,
@@ -99,6 +100,61 @@ Deno.serve(async (req: Request) => {
         metadata: { ...metadata, deliveryStatus: "sent" },
       });
     };
+
+    if (config.provider === "uazapi") {
+      const target: uaz.UazapiTarget = {
+        base: config.api_base_url as string,
+        token: config.instance_token as string,
+      };
+
+      if (action === "get-status") {
+        const { state, error } = await uaz.instanceState(target);
+        if (error) return json({ error }, 502);
+        return json({ state, connected: state === "open", instance: config.instance_name });
+      }
+
+      // Template é conceito da Meta; no Baileys tudo é texto livre.
+      if (action === "list-templates") return json({ templates: [] });
+      if (action === "send-template") {
+        return json({ error: "Templates não existem na UAZAPI — envie como texto." }, 400);
+      }
+      if (action === "sync-history") {
+        return json({ error: "Importação de histórico só existe na Cloud API." }, 400);
+      }
+
+      const phone = body.phone as string | undefined;
+      const contactId = body.contact_id as string | undefined;
+      if (!phone) return json({ error: "phone é obrigatório" }, 400);
+
+      if (action === "send-text") {
+        const text = (body.text as string | undefined)?.trim();
+        if (!text) return json({ error: "text é obrigatório" }, 400);
+        const { messageId, error } = await uaz.sendText(target, normalizePhone(phone), text);
+        if (error) return json({ success: false, error }, 200);
+        await recordSent(contactId, messageId, text, {});
+        return json({ success: true, message_id: messageId });
+      }
+
+      if (action === "send-media") {
+        const mediaUrl = body.mediaUrl as string | undefined;
+        if (!mediaUrl) return json({ error: "mediaUrl é obrigatório" }, 400);
+        const mediaType = (body.mediaType as string | undefined) ?? "document";
+        const caption = (body.caption as string | undefined) ?? "";
+
+        const { messageId, error } = await uaz.sendMedia(target, normalizePhone(phone), {
+          url: mediaUrl,
+          type: mediaType,
+          caption,
+        });
+        if (error) return json({ success: false, error }, 200);
+        await recordSent(contactId, messageId, caption || `[${mediaType}]`, {
+          mediaUrl, mediaType, mimetype: body.mimetype ?? null,
+        });
+        return json({ success: true, message_id: messageId });
+      }
+
+      return json({ error: `Ação desconhecida: ${action}` }, 400);
+    }
 
     if (config.provider === "evolution") {
       const target: evo.EvolutionTarget = {

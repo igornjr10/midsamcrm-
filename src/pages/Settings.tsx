@@ -77,13 +77,13 @@ export default function Settings() {
   const callInstance = useCallback(
     async (action: "connect" | "status" | "disconnect") => {
       const { data, error } = await supabase.functions.invoke(
-        `evolution-instance?action=${action}`,
-        { body: { company_id: company?.id } },
+        `whatsapp-instance?action=${action}`,
+        { body: { company_id: company?.id, provider } },
       );
       if (error || data?.error) throw new Error(data?.error || error?.message);
       return data as { connected?: boolean; state?: InstanceState; qr?: string | null };
     },
-    [company?.id],
+    [company?.id, provider],
   );
 
   const stopPolling = useCallback(() => {
@@ -287,10 +287,11 @@ export default function Settings() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-3">
             {([
-              ["evolution", "QR code", "Escaneia e pronto"],
-              ["meta", "Cloud API (Datafy)", "Credenciais da Meta"],
+              ["evolution", "QR code · Evolution", "Servidor próprio"],
+              ["uazapi", "QR code · UAZAPI", "Serviço hospedado"],
+              ["meta", "Cloud API · Datafy", "Credenciais da Meta"],
             ] as const).map(([value, title, hint]) => (
               <button
                 key={value}
@@ -311,7 +312,7 @@ export default function Settings() {
             <p className="mt-3 rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
               Esta empresa está usando{" "}
               <span className="font-medium text-foreground">
-                {config.provider === "evolution" ? "QR code" : "Cloud API"}
+                {config.provider === "meta" ? "Cloud API" : `QR code · ${config.provider === "uazapi" ? "UAZAPI" : "Evolution"}`}
               </span>
               . A troca só vale depois de conectar/salvar abaixo, e o histórico de conversas continua o mesmo.
             </p>
@@ -319,7 +320,7 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      {provider === "evolution" ? (
+      {provider !== "meta" ? (
         <Card>
           <CardHeader>
             <CardTitle className="flex flex-wrap items-center gap-2">
@@ -361,7 +362,7 @@ export default function Settings() {
                 {statusLoading && <Loader2 className="animate-spin" />}
                 Verificar status
               </Button>
-              {config?.provider === "evolution" && (
+              {config?.provider === provider && (
                 <Button variant="outline" onClick={() => void handleDisconnect()} disabled={connecting}>
                   <Unplug />
                   Desconectar

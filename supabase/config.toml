@@ -425,3 +425,6 @@ verify_jwt = false
 
 [functions.evolution-instance]
 verify_jwt = false
+
+[functions.whatsapp-instance]
+verify_jwt = false

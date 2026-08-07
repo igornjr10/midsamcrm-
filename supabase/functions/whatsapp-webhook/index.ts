@@ -1438,6 +1438,35 @@ Deno.serve(async (req: Request) => {
       return json({ ok: true });
     }
 
+    // UAZAPI: a instância se identifica pela query da URL (?uazapi=<token>),
+    // gravada no webhook no momento da criação. Roteamos por ela de propósito —
+    // não depende de achar um campo dentro do payload.
+    const uazapiToken = new URL(req.url).searchParams.get("uazapi");
+    if (uazapiToken) {
+      const { data: configRaw } = await supabase
+        .from("whatsapp_configs")
+        .select(CONFIG_COLUMNS)
+        .eq("instance_token", uazapiToken)
+        .eq("active", true)
+        .maybeSingle();
+      const config = configRaw as WhatsappConfig | null;
+      if (!config) {
+        console.log("webhook(uazapi): instância desconhecida");
+        return json({ ok: true, ignored: "instância desconhecida" });
+      }
+
+      // Ainda não sabemos o formato exato do evento da UAZAPI. Um parser
+      // chutado descartaria mensagem em silêncio — o pior tipo de falha aqui.
+      // Até termos um payload real em mãos, registramos e devolvemos ok, para
+      // o servidor não ficar reenviando.
+      console.log(
+        "webhook(uazapi): payload recebido",
+        config.company_id,
+        JSON.stringify(payload).slice(0, 2000),
+      );
+      return json({ ok: true, pending: "normalização da UAZAPI" });
+    }
+
     const entries = (payload?.entry ?? []) as Array<Record<string, any>>;
     if (entries.length === 0) return json({ ok: true, ignored: "no entry" });
 
