@@ -60,6 +60,9 @@ export default function Settings() {
   const [qrRounds, setQrRounds] = useState(0);
   const [instanceState, setInstanceState] = useState<InstanceState>("none");
   const [connecting, setConnecting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [imported, setImported] =
+    useState<{ messages: number; contacts: number; total: number; done: number } | null>(null);
   const pollRef = useRef<number | null>(null);
 
   const webhookUrl = `${SUPABASE_URL}/functions/v1/whatsapp-webhook`;
@@ -186,6 +189,38 @@ export default function Settings() {
       toast.error(err instanceof Error ? err.message : "Erro ao desconectar");
     } finally {
       setConnecting(false);
+    }
+  };
+
+  // Importa em lotes: cada chamada devolve o offset seguinte e o front continua
+  // até acabar. Uma chamada só estouraria o tempo da function.
+  const importHistory = async () => {
+    setImporting(true);
+    setImported(null);
+    try {
+      let offset = 0;
+      let messages = 0;
+      let contacts = 0;
+
+      for (let round = 0; round < 200; round += 1) {
+        const { data, error } = await supabase.functions.invoke("whatsapp-history", {
+          body: { company_id: company?.id, offset },
+        });
+        if (error || data?.error) throw new Error(data?.error || error?.message);
+
+        messages += Number(data.imported_messages ?? 0);
+        contacts += Number(data.created_contacts ?? 0);
+        offset = Number(data.next_offset ?? offset);
+        setImported({ messages, contacts, total: Number(data.total_chats ?? 0), done: offset });
+
+        if (data.done) break;
+      }
+
+      toast.success(`Histórico importado: ${messages} mensagens, ${contacts} contatos novos.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao importar histórico");
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -369,6 +404,27 @@ export default function Settings() {
                 </Button>
               )}
             </div>
+
+            {provider === "uazapi" && config?.provider === "uazapi" && (
+              <div className="space-y-2 rounded-lg border p-3">
+                <p className="text-sm font-medium">Histórico do WhatsApp</p>
+                <p className="text-xs text-muted-foreground">
+                  Traz as conversas que já existiam no aparelho: cada número vira contato e as
+                  mensagens entram no Chat com a data original. Grupos ficam de fora, e mídia antiga
+                  entra como rótulo — o arquivo só vem no que chegar daqui para frente.
+                </p>
+                <Button variant="outline" onClick={() => void importHistory()} disabled={importing}>
+                  {importing ? <Loader2 className="animate-spin" /> : <History />}
+                  {importing ? "Importando..." : "Importar histórico"}
+                </Button>
+                {imported && (
+                  <p className="text-xs text-muted-foreground">
+                    {imported.done} de {imported.total} conversas · {imported.messages} mensagens ·{" "}
+                    {imported.contacts} contatos novos
+                  </p>
+                )}
+              </div>
+            )}
 
             <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
               O webhook é apontado sozinho na criação — não precisa configurar nada no painel do Evolution.

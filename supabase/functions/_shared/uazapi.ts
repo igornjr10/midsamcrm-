@@ -198,6 +198,123 @@ export async function sendText(
   return { messageId: sentId(data), error: null };
 }
 
+// ── Leitura (histórico) ─────────────────────────────────────────────────────
+
+export type UazChat = {
+  wa_chatid: string;
+  wa_isGroup: boolean;
+  wa_name: string;
+  wa_contactName: string;
+  name: string;
+  phone: string;
+  wa_lastMsgTimestamp: number;
+};
+
+/** Conversas da instância. Grupos vêm junto e são filtrados por quem chama. */
+export async function findChats(
+  target: UazapiTarget,
+  opts: { limit?: number; offset?: number } = {},
+): Promise<{ chats: UazChat[]; total: number; error: string | null }> {
+  const { ok, data, error } = await call<Record<string, any>>(
+    target.base,
+    "/chat/find",
+    { token: target.token },
+    { method: "POST", body: { limit: opts.limit ?? 200, offset: opts.offset ?? 0 } },
+  );
+  if (!ok || !data) return { chats: [], total: 0, error: error ?? "Falha ao listar conversas" };
+  return {
+    chats: (data.chats ?? []) as UazChat[],
+    total: Number(data.pagination?.totalRecords ?? 0),
+    error: null,
+  };
+}
+
+export type UazMessage = {
+  messageid: string;
+  chatid: string;
+  fromMe: boolean;
+  isGroup: boolean;
+  messageTimestamp: number;
+  messageType: string;
+  text: string;
+  senderName: string;
+  /** Telefone real do remetente. `sender` pode ser um @lid, que não é número. */
+  sender_pn: string;
+  content?: Record<string, unknown>;
+};
+
+export async function findMessages(
+  target: UazapiTarget,
+  opts: { chatid?: string; limit?: number; offset?: number } = {},
+): Promise<{ messages: UazMessage[]; hasMore: boolean; error: string | null }> {
+  const { ok, data, error } = await call<Record<string, any>>(
+    target.base,
+    "/message/find",
+    { token: target.token },
+    {
+      method: "POST",
+      body: {
+        ...(opts.chatid ? { chatid: opts.chatid } : {}),
+        limit: opts.limit ?? 100,
+        offset: opts.offset ?? 0,
+      },
+    },
+  );
+  if (!ok || !data) return { messages: [], hasMore: false, error: error ?? "Falha ao listar mensagens" };
+  return {
+    messages: (data.messages ?? []) as UazMessage[],
+    hasMore: Boolean(data.hasMore),
+    error: null,
+  };
+}
+
+/** URL decriptada de uma mídia. O content.URL do payload é .enc e não abre. */
+export async function downloadMedia(
+  target: UazapiTarget,
+  messageId: string,
+): Promise<{ fileURL: string; mimetype: string } | null> {
+  const { ok, data } = await call<Record<string, any>>(
+    target.base,
+    "/message/download",
+    { token: target.token },
+    { method: "POST", body: { id: messageId } },
+  );
+  if (!ok || !data?.fileURL) return null;
+  return { fileURL: String(data.fileURL), mimetype: String(data.mimetype ?? "") };
+}
+
+/** JID -> dígitos. Grupo e broadcast devolvem null. */
+export function jidToPhone(jid: string | null | undefined): string | null {
+  if (!jid) return null;
+  const raw = String(jid);
+  if (!raw.endsWith("@s.whatsapp.net") && !raw.endsWith("@c.us")) return null;
+  const digits = raw.split("@")[0].split(":")[0].replace(/\D/g, "");
+  return digits || null;
+}
+
+/** messageType da UAZAPI -> tipo da Meta, que é o que o CRM entende. */
+export function messageKind(type: string): "text" | "image" | "video" | "audio" | "document" | "other" {
+  const t = (type ?? "").toLowerCase();
+  if (t === "conversation" || t === "extendedtextmessage") return "text";
+  if (t === "imagemessage") return "image";
+  if (t === "videomessage") return "video";
+  if (t === "audiomessage" || t === "pttmessage") return "audio";
+  if (t === "documentmessage") return "document";
+  return "other";
+}
+
+/** Texto exibível de uma mensagem, com rótulo quando é mídia sem legenda. */
+export function messageText(msg: UazMessage): string {
+  const direct = (msg.text ?? "").trim() || String((msg.content as any)?.text ?? "").trim();
+  if (direct) return direct;
+  const caption = String((msg.content as any)?.caption ?? "").trim();
+  if (caption) return caption;
+  const label: Record<string, string> = {
+    image: "[Imagem]", video: "[Vídeo]", audio: "[Áudio]", document: "[Documento]",
+  };
+  return label[messageKind(msg.messageType)] ?? `[${msg.messageType}]`;
+}
+
 export async function sendMedia(
   target: UazapiTarget,
   phone: string,

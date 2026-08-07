@@ -428,3 +428,6 @@ verify_jwt = false
 
 [functions.whatsapp-instance]
 verify_jwt = false
+
+[functions.whatsapp-history]
+verify_jwt = false
