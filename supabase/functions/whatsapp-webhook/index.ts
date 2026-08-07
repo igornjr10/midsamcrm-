@@ -11,6 +11,7 @@ import {
   dayRange, describeDate, localDateTime, todayBrief,
 } from "../_shared/date.ts";
 import * as evo from "../_shared/evolution.ts";
+import * as uaz from "../_shared/uazapi.ts";
 
 // Cliente com service role. Sem os genéricos explícitos o ReturnType resolve
 // para os defaults (never) e não aceita o cliente real.
@@ -81,6 +82,10 @@ function evoTarget(config: WhatsappConfig): evo.EvolutionTarget {
     apikey: config.instance_token ?? "",
     instance: config.instance_name ?? "",
   };
+}
+
+function uazTarget(config: WhatsappConfig): uaz.UazapiTarget {
+  return { base: config.api_base_url, token: config.instance_token ?? "" };
 }
 
 type AiConfig = {
@@ -218,6 +223,25 @@ async function downloadMedia(
       return null;
     }
     return await storeMedia(fetched.bytes, fetched.mime || mimetype, config, msgId, supabase, supabaseUrl);
+  }
+
+  // UAZAPI: o content.URL do payload é .enc e não abre. O /message/download
+  // devolve uma URL já decriptada, que aí sim dá para baixar.
+  if (config.provider === "uazapi") {
+    const link = await uaz.downloadMedia(uazTarget(config), mediaId);
+    if (!link) {
+      console.error("downloadMedia: UAZAPI não devolveu a mídia", mediaId);
+      return null;
+    }
+    try {
+      const res = await fetch(link.fileURL, { signal: AbortSignal.timeout(30_000) });
+      if (!res.ok) return null;
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      return await storeMedia(bytes, link.mimetype || mimetype, config, msgId, supabase, supabaseUrl);
+    } catch (e) {
+      console.error("downloadMedia: UAZAPI download falhou", e instanceof Error ? e.message : "unknown");
+      return null;
+    }
   }
 
   const base = resolveApiBase(config.api_base_url);
@@ -468,6 +492,12 @@ async function findOrCreateContact(
 }
 
 async function sendWhatsappText(config: WhatsappConfig, phone: string, text: string): Promise<string | null> {
+  if (config.provider === "uazapi") {
+    const { messageId, error } = await uaz.sendText(uazTarget(config), phone, text);
+    if (error) console.error("sendWhatsappText (uazapi) falhou", error);
+    return messageId;
+  }
+
   if (config.provider === "evolution") {
     const { messageId, error } = await evo.sendText(evoTarget(config), phone, text);
     if (error) console.error("sendWhatsappText (evolution) falhou", error);
@@ -551,6 +581,17 @@ async function sendWhatsappMedia(
   item: LibraryFile,
   caption: string,
 ): Promise<string | null> {
+  if (config.provider === "uazapi") {
+    const { messageId, error } = await uaz.sendMedia(uazTarget(config), phone, {
+      url: item.file_url,
+      type: item.media_type,
+      caption,
+      fileName: item.title,
+    });
+    if (error) console.error("sendWhatsappMedia (uazapi) falhou", error);
+    return messageId;
+  }
+
   if (config.provider === "evolution") {
     // O Evolution baixa a URL sozinho — não existe o upload em duas etapas.
     const { messageId, error } = await evo.sendMedia(evoTarget(config), phone, {
@@ -1455,16 +1496,19 @@ Deno.serve(async (req: Request) => {
         return json({ ok: true, ignored: "instância desconhecida" });
       }
 
-      // Ainda não sabemos o formato exato do evento da UAZAPI. Um parser
-      // chutado descartaria mensagem em silêncio — o pior tipo de falha aqui.
-      // Até termos um payload real em mãos, registramos e devolvemos ok, para
-      // o servidor não ficar reenviando.
-      console.log(
-        "webhook(uazapi): payload recebido",
-        config.company_id,
-        JSON.stringify(payload).slice(0, 2000),
-      );
-      return json({ ok: true, pending: "normalização da UAZAPI" });
+      const value = uaz.normalizeWebhook(payload);
+      if (value.messages.length === 0 && value.message_echoes.length === 0) {
+        // Evento de conexão, status, ou envelope diferente do esperado. Fica o
+        // registro para o caso de ser mensagem que não soubemos ler.
+        console.log(
+          "webhook(uazapi): sem mensagem no evento",
+          JSON.stringify(payload).slice(0, 1000),
+        );
+        return json({ ok: true, ignored: "sem mensagem" });
+      }
+
+      await processChange(supabase, supabaseUrl, "uazapi", value, config);
+      return json({ ok: true });
     }
 
     const entries = (payload?.entry ?? []) as Array<Record<string, any>>;

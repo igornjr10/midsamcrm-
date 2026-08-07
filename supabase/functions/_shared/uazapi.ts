@@ -315,6 +315,101 @@ export function messageText(msg: UazMessage): string {
   return label[messageKind(msg.messageType)] ?? `[${msg.messageType}]`;
 }
 
+// ── Normalização do webhook ─────────────────────────────────────────────────
+
+/**
+ * Acha os objetos de mensagem dentro do evento.
+ *
+ * O formato do envelope não está documentado e não deu para observar um evento
+ * real, então procuramos em vez de assumir: qualquer objeto com `messageid` ou
+ * `chatid` é mensagem, venha ele solto, em `message`, em `data` ou numa lista.
+ * O que identifica a empresa não passa por aqui — vem do token na query da URL.
+ */
+function collectMessages(payload: Record<string, any>): UazMessage[] {
+  const found = new Map<string, UazMessage>();
+
+  const consider = (v: unknown) => {
+    if (!v || typeof v !== "object" || Array.isArray(v)) return;
+    const o = v as Record<string, unknown>;
+    const id = o.messageid ?? o.id;
+    if (!id || (!o.chatid && !o.messageType)) return;
+    found.set(String(id), o as unknown as UazMessage);
+  };
+
+  const scan = (v: unknown) => {
+    if (Array.isArray(v)) v.forEach(consider);
+    else consider(v);
+  };
+
+  scan(payload);
+  scan(payload.message);
+  scan(payload.messages);
+  scan(payload.data);
+  scan(payload.data?.message);
+  scan(payload.data?.messages);
+
+  return [...found.values()];
+}
+
+export type NormalizedValue = {
+  messages: Array<Record<string, unknown>>;
+  message_echoes: Array<Record<string, unknown>>;
+  statuses: Array<{ id: string; status: string }>;
+  contacts: Array<{ wa_id: string; profile?: { name?: string } }>;
+};
+
+/** Evento da UAZAPI -> o mesmo `value` que a Meta manda. */
+export function normalizeWebhook(payload: Record<string, any>): NormalizedValue {
+  const value: NormalizedValue = { messages: [], message_echoes: [], statuses: [], contacts: [] };
+
+  for (const m of collectMessages(payload)) {
+    const id = String(m.messageid ?? "");
+    if (!id) continue;
+
+    // Grupo não vira conversa do CRM.
+    if (m.isGroup || String(m.chatid ?? "").endsWith("@g.us")) continue;
+
+    // sender_pn é o telefone de verdade; `sender` costuma ser um @lid.
+    const phone = jidToPhone(m.sender_pn) ?? jidToPhone(m.chatid);
+    if (!phone) continue;
+
+    const kind = messageKind(m.messageType ?? "");
+    const type = kind === "other" ? String(m.messageType ?? "desconhecido") : kind;
+    const mime = String((m.content as any)?.mimetype ?? "");
+
+    const msg: Record<string, unknown> = {
+      id,
+      timestamp: m.messageTimestamp
+        ? String(Math.floor(Number(m.messageTimestamp) / 1000))
+        : undefined,
+      type,
+      ...(kind === "text"
+        ? { text: { body: messageText(m) } }
+        : kind !== "other"
+          ? {
+              [kind]: {
+                // O download da mídia é pelo id da mensagem.
+                id,
+                mime_type: mime || undefined,
+                ...(m.text ? { caption: m.text } : {}),
+              },
+            }
+          : {}),
+    };
+
+    if (m.fromMe) {
+      value.message_echoes.push({ ...msg, to: phone });
+    } else {
+      value.messages.push({ ...msg, from: phone });
+      if (m.senderName) {
+        value.contacts.push({ wa_id: phone, profile: { name: String(m.senderName) } });
+      }
+    }
+  }
+
+  return value;
+}
+
 export async function sendMedia(
   target: UazapiTarget,
   phone: string,
