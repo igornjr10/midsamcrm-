@@ -25,6 +25,9 @@ function generateVerifyToken(): string {
 
 type InstanceState = "open" | "connecting" | "close" | "none" | "unknown";
 
+/** 20 renovações de 30s ≈ 10 minutos de janela para escanear. */
+const MAX_QR_ROUNDS = 20;
+
 const STATE_LABEL: Record<InstanceState, string> = {
   open: "Conectado",
   connecting: "Aguardando leitura do QR",
@@ -53,6 +56,8 @@ export default function Settings() {
   // só quem já tem conta Meta consegue.
   const [provider, setProvider] = useState<WhatsappProvider>("evolution");
   const [qr, setQr] = useState<string | null>(null);
+  /** Quantas vezes o código já foi renovado nesta tentativa. */
+  const [qrRounds, setQrRounds] = useState(0);
   const [instanceState, setInstanceState] = useState<InstanceState>("none");
   const [connecting, setConnecting] = useState(false);
   const pollRef = useRef<number | null>(null);
@@ -88,17 +93,28 @@ export default function Settings() {
     }
   }, []);
 
-  // Enquanto o QR está na tela, pergunta o estado a cada 3s. O Evolution não
-  // avisa o front quando o celular lê o código — só o próprio servidor sabe.
+  // Enquanto o QR está na tela: pergunta o estado a cada 3s e renova o código a
+  // cada 30s.
+  //
+  // Os dois são necessários. O Evolution não avisa o front quando o celular lê o
+  // código — só o próprio servidor sabe. E o QR do WhatsApp rotaciona sozinho em
+  // poucos segundos: sem renovar, o cliente que demora para achar "Aparelhos
+  // conectados" escaneia um código morto e não acontece nada — sem erro, sem
+  // aviso, a tela só fica esperando para sempre.
   useEffect(() => {
     if (!qr || !company?.id) return;
+
+    let ticks = 0;
     pollRef.current = window.setInterval(() => {
+      ticks += 1;
+
       void callInstance("status")
         .then((res) => {
           setInstanceState(res.state ?? "unknown");
           if (res.connected) {
             stopPolling();
             setQr(null);
+            setQrRounds(0);
             toast.success("Número conectado!");
             void queryClient.invalidateQueries({ queryKey: whatsappConfigQueryKey(company.id) });
           }
@@ -106,12 +122,39 @@ export default function Settings() {
         .catch(() => {
           /* servidor fora do ar: a próxima volta tenta de novo */
         });
+
+      // A cada 10 voltas (30s) pede um código novo. Trocar o `qr` reinicia este
+      // efeito, então o ciclo recomeça limpo a partir do código novo.
+      if (ticks % 10 === 0) {
+        void callInstance("connect")
+          .then((res) => {
+            if (res.qr) {
+              setQr(res.qr);
+              setQrRounds((n) => n + 1);
+            }
+          })
+          .catch(() => {
+            /* mantém o código atual e tenta de novo no próximo ciclo */
+          });
+      }
     }, 3000);
+
     return stopPolling;
   }, [qr, company?.id, callInstance, stopPolling, queryClient]);
 
+  // Teto de renovações: o Evolution tem limite de QRs por instância, e uma aba
+  // esquecida aberta queimaria a cota até a instância parar de gerar código.
+  useEffect(() => {
+    if (qrRounds < MAX_QR_ROUNDS) return;
+    stopPolling();
+    setQr(null);
+    setQrRounds(0);
+    toast.info("O QR expirou. Toque em Conectar número para gerar outro.");
+  }, [qrRounds, stopPolling]);
+
   const handleConnect = async () => {
     setConnecting(true);
+    setQrRounds(0);
     try {
       const res = await callInstance("connect");
       setInstanceState(res.state ?? "unknown");
@@ -289,8 +332,8 @@ export default function Settings() {
               )}
             </CardTitle>
             <CardDescription>
-              No celular: WhatsApp → Aparelhos conectados → Conectar um aparelho. O QR expira em cerca de
-              um minuto; se passar, gere outro.
+              No celular: WhatsApp → Aparelhos conectados → Conectar um aparelho. O código se renova
+              sozinho enquanto esta tela estiver aberta — não precisa ter pressa.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -299,7 +342,7 @@ export default function Settings() {
                 <img src={qrSrc} alt="QR code para conectar o WhatsApp" className="h-56 w-56" />
                 <p className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  Aguardando leitura...
+                  Aguardando leitura — o código se renova sozinho
                 </p>
               </div>
             )}
