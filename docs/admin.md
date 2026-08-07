@@ -1,14 +1,16 @@
 # Administração da conta
 
 Como transferir acesso, trocar o e-mail principal e promover alguém a super
-admin. Tudo aqui é operação de banco/Auth — nenhuma dessas telas existe no CRM.
+admin. Fora do que a página **Empresas** já resolve, o resto aqui é operação de
+banco/Auth — não existe tela no CRM.
 
 ## Quem é super admin
 
 A flag é `profiles.is_super_admin`. Quem a tem:
 
 - enxerga todas as empresas (a RLS abre com `public.is_super_admin()`);
-- acessa a página **Empresas**;
+- acessa a página **Empresas** — onde cria empresas, renomeia e troca o e-mail
+  de login de cada uma;
 - pode operar a conta de um cliente — as edge functions respeitam o
   `company_id` que o front manda (`resolveCompanyId` em `_shared/company.ts`).
 
@@ -30,13 +32,27 @@ join auth.users u on u.id = p.user_id
 where p.is_super_admin;
 ```
 
+## Renomear uma empresa / trocar o e-mail de login dela
+
+Pela página **Empresas**: botão *Editar* na linha da empresa. Dá para mudar o
+nome e o e-mail de login do responsável na mesma janela.
+
+O e-mail que aparece ali é o do **dono** da empresa — a membership `admin` mais
+antiga, que é a criada junto com a empresa (`public.company_owners`). Se a
+empresa tiver outros usuários, os e-mails deles não passam por essa tela.
+
+A troca vale na hora, sem link de confirmação (a edge function usa
+`email_confirm: true`), e a **senha não muda**. Avise o cliente antes — o login
+antigo para de funcionar imediatamente.
+
 ## Trocar o e-mail principal da conta
 
 O que identifica o usuário no banco é o `user_id` (uuid), **não** o e-mail. Por
 isso trocar o e-mail não afeta empresas, contatos, conversas nem permissões —
 tudo continua apontando para o mesmo id.
 
-Dois caminhos:
+Para a conta de super admin (que não é dona de uma empresa cliente), a tela
+acima não serve. Dois caminhos:
 
 **1. Pelo Dashboard** (mais direto)
 Authentication → Users → clique no usuário → *Edit user* → altere o e-mail.
