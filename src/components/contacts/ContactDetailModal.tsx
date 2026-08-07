@@ -149,7 +149,7 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
             <Label>Nome</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Telefone</Label>
               <Input value={phone} onChange={(e) => setPhone(e.target.value)} />

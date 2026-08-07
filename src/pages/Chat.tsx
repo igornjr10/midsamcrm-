@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Send, Search, Loader2, Bot, Play, FileText, MessagesSquare, Mic, Library, Paperclip,
+  ArrowLeft,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase, SUPABASE_URL } from "@/integrations/supabase/client";
@@ -219,10 +220,17 @@ export default function Chat() {
   };
 
   return (
-    // Desconta o padding vertical do <main> (p-6 = 3rem no total, lg:p-8 = 4rem)
-    <div className="flex h-[calc(100vh-3rem)] gap-4 lg:h-[calc(100vh-4rem)]">
-      {/* Lista de conversas */}
-      <div className="flex w-72 flex-shrink-0 flex-col overflow-hidden rounded-xl border bg-card shadow-card">
+    // Desconta o padding vertical do <main> (p-4 = 2rem, sm:p-6 = 3rem,
+    // lg:p-8 = 4rem) e, abaixo de lg, também a barra superior do mobile (3.5rem).
+    <div className="flex h-[calc(100vh-5.5rem)] gap-4 sm:h-[calc(100vh-6.5rem)] lg:h-[calc(100vh-4rem)]">
+      {/* Lista de conversas. No mobile ocupa a tela inteira e dá lugar à
+          conversa quando um contato é aberto — as duas não cabem lado a lado. */}
+      <div
+        className={cn(
+          "flex w-full flex-shrink-0 flex-col overflow-hidden rounded-xl border bg-card shadow-card lg:w-72",
+          selectedContact && "hidden lg:flex",
+        )}
+      >
         <div className="border-b p-3">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -299,13 +307,26 @@ export default function Chat() {
       </div>
 
       {/* Thread */}
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-card">
+      <div
+        className={cn(
+          "flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-card",
+          // Sem contato aberto, quem manda no mobile é a lista.
+          !selectedContact && "hidden lg:flex",
+        )}
+      >
         {!selectedContact ? (
           <ChatOverview onSelect={(contactId) => setSearchParams({ contato: contactId })} />
         ) : (
           <>
             <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
               <div className="flex min-w-0 items-center gap-2.5">
+                <button
+                  onClick={() => setSearchParams({})}
+                  aria-label="Voltar para as conversas"
+                  className="-ml-2 shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground lg:hidden"
+                >
+                  <ArrowLeft className="h-5 w-5" />
+                </button>
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
                   {selectedContact.name.trim().charAt(0).toUpperCase() || "?"}
                 </span>

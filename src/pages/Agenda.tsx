@@ -245,7 +245,7 @@ export default function Agenda() {
                   type="button"
                   onClick={() => setSelectedDay(day)}
                   className={cn(
-                    "flex h-24 flex-col items-stretch gap-1 border-b border-r p-1.5 text-left transition-colors hover:bg-muted/50",
+                    "flex h-16 flex-col items-stretch gap-1 border-b border-r p-1.5 text-left transition-colors hover:bg-muted/50 sm:h-24",
                     otherMonth && "bg-muted/20 text-muted-foreground",
                     key === selectedKey && "bg-primary/5 ring-1 ring-inset ring-primary/40",
                   )}
@@ -258,7 +258,9 @@ export default function Agenda() {
                   >
                     {day.getDate()}
                   </span>
-                  <span className="min-h-0 flex-1 space-y-0.5 overflow-hidden">
+                  {/* No celular a coluna tem ~49px: o título não cabe e vira
+                      ruído, então sobra só o ponto colorido de cada item. */}
+                  <span className="flex min-h-0 flex-1 flex-wrap content-start gap-1 overflow-hidden sm:block sm:space-y-0.5">
                     {items.slice(0, 2).map((item) => (
                       <span key={item.id} className="flex items-center gap-1 text-[11px] leading-tight">
                         <span
@@ -271,7 +273,7 @@ export default function Agenda() {
                         />
                         <span
                           className={cn(
-                            "truncate",
+                            "hidden truncate sm:inline",
                             item.status === "canceled" && "text-muted-foreground line-through",
                             item.status === "pending" && "font-medium text-primary",
                           )}
@@ -441,7 +443,7 @@ export default function Agenda() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>Tipo</Label>
                 <Select
@@ -479,7 +481,7 @@ export default function Agenda() {
             </label>
 
             {!form.all_day && (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label>Início</Label>
                   <Input
