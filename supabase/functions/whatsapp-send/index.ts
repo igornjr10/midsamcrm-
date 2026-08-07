@@ -13,6 +13,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { assertWhatsAppResponse } from "../_shared/whatsapp-error.ts";
 import { normalizePhone } from "../_shared/phone.ts";
 import { resolveCompanyId } from "../_shared/company.ts";
+import * as evo from "../_shared/evolution.ts";
 import {
   buildTemplatePayload,
   renderTemplateText,
@@ -71,12 +72,93 @@ Deno.serve(async (req: Request) => {
 
     const { data: config } = await supabaseAdmin
       .from("whatsapp_configs")
-      .select("id, company_id, phone_number_id, waba_id, access_token, api_base_url, active")
+      .select("id, company_id, phone_number_id, waba_id, access_token, api_base_url, active, provider, instance_name, instance_token")
       .eq("company_id", companyId)
       .maybeSingle();
 
     if (!config) return json({ error: "WhatsApp não configurado. Conecte seu número em Configurações." }, 400);
     if (!config.active) return json({ error: "Configuração de WhatsApp desativada." }, 400);
+
+    // Registra a mensagem enviada para o chat mostrar imediatamente. Igual nos
+    // dois provedores — só o id da mensagem muda de origem.
+    const recordSent = async (
+      contactId: string | undefined,
+      wamid: string | null,
+      content: string,
+      metadata: Record<string, unknown>,
+    ) => {
+      if (!contactId) return;
+      await supabaseAdmin.from("conversations").insert({
+        user_id: user.id,
+        company_id: companyId,
+        contact_id: contactId,
+        sender: "user",
+        content,
+        channel: "whatsapp",
+        message_ref: wamid,
+        metadata: { ...metadata, deliveryStatus: "sent" },
+      });
+    };
+
+    if (config.provider === "evolution") {
+      const target: evo.EvolutionTarget = {
+        base: config.api_base_url as string,
+        apikey: config.instance_token as string,
+        instance: config.instance_name as string,
+      };
+
+      if (action === "get-status") {
+        const { state, error } = await evo.instanceState(target);
+        if (error) return json({ error }, 502);
+        return json({ state, connected: state === "open", instance: config.instance_name });
+      }
+
+      // Template é conceito da Meta: aprovação da WABA, componentes, variáveis
+      // numeradas. No Baileys tudo é texto livre, então a tela de Campanhas
+      // manda send-text nessas empresas.
+      if (action === "list-templates") return json({ templates: [] });
+      if (action === "send-template") {
+        return json({ error: "Templates não existem no Evolution — envie como texto." }, 400);
+      }
+      if (action === "sync-history") {
+        return json({ error: "Importação de histórico só existe na Cloud API." }, 400);
+      }
+
+      const phone = body.phone as string | undefined;
+      const contactId = body.contact_id as string | undefined;
+      if (!phone) return json({ error: "phone é obrigatório" }, 400);
+
+      if (action === "send-text") {
+        const text = (body.text as string | undefined)?.trim();
+        if (!text) return json({ error: "text é obrigatório" }, 400);
+        const { messageId, error } = await evo.sendText(target, normalizePhone(phone), text);
+        if (error) return json({ success: false, error }, 200);
+        await recordSent(contactId, messageId, text, {});
+        return json({ success: true, message_id: messageId });
+      }
+
+      if (action === "send-media") {
+        const mediaUrl = body.mediaUrl as string | undefined;
+        if (!mediaUrl) return json({ error: "mediaUrl é obrigatório" }, 400);
+        const mediaType = (body.mediaType as string | undefined) ?? "document";
+        const caption = (body.caption as string | undefined) ?? "";
+
+        // Sem o upload em duas etapas da Meta: o Evolution baixa a URL sozinho.
+        const { messageId, error } = await evo.sendMedia(target, normalizePhone(phone), {
+          url: mediaUrl,
+          type: mediaType,
+          mimetype: body.mimetype as string | undefined,
+          caption,
+        });
+        if (error) return json({ success: false, error }, 200);
+        await recordSent(contactId, messageId, caption || `[${mediaType}]`, {
+          mediaUrl, mediaType, mimetype: body.mimetype ?? null,
+        });
+        return json({ success: true, message_id: messageId });
+      }
+
+      return json({ error: `Ação desconhecida: ${action}` }, 400);
+    }
 
     const graphBase = resolveApiBase(config.api_base_url as string);
     const graphHeaders = {
@@ -252,19 +334,7 @@ Deno.serve(async (req: Request) => {
     };
     const wamid = sendData.messages?.[0]?.id ?? null;
 
-    // Registra a mensagem enviada para o chat mostrar imediatamente.
-    if (contactId) {
-      await supabaseAdmin.from("conversations").insert({
-        user_id: user.id,
-        company_id: companyId,
-        contact_id: contactId,
-        sender: "user",
-        content: sentContent,
-        channel: "whatsapp",
-        message_ref: wamid,
-        metadata: { ...sentMetadata, deliveryStatus: "sent" },
-      });
-    }
+    await recordSent(contactId, wamid, sentContent, sentMetadata);
 
     return json({ success: true, message_id: wamid });
   } catch (error) {

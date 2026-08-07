@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import type { WhatsappConfig } from "@/lib/types";
+import type { WhatsappConfig, WhatsappProvider } from "@/lib/types";
 
 export function whatsappConfigQueryKey(companyId: string | undefined) {
   return ["whatsapp-config", companyId] as const;
@@ -30,9 +30,10 @@ export function useSaveWhatsappConfigMutation() {
     mutationFn: async (payload: {
       user_id: string;
       company_id: string;
-      phone_number_id: string;
-      waba_id: string;
-      access_token: string;
+      provider?: WhatsappProvider;
+      phone_number_id?: string | null;
+      waba_id?: string | null;
+      access_token?: string | null;
       webhook_verify_token?: string;
       app_id?: string | null;
       label?: string | null;

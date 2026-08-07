@@ -9,6 +9,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import {
   CONSULTAR_AGENDA_TOOL, CONSULTAR_DATA_TOOL, dayRange, describeDate, todayBrief,
 } from "../_shared/date.ts";
+import * as evo from "../_shared/evolution.ts";
 
 // Cliente com service role. Sem os genéricos explícitos o ReturnType resolve
 // para os defaults (never) e não aceita o cliente real.
@@ -63,7 +64,23 @@ type WhatsappConfig = {
   phone_number_id: string;
   access_token: string;
   api_base_url: string;
+  provider: string;
+  instance_name: string | null;
+  instance_token: string | null;
 };
+
+/** Colunas que todo lookup de config precisa trazer. Literal única de
+ *  propósito: o supabase-js infere o tipo da linha a partir da string, e
+ *  concatenar com `+` derruba a inferência para GenericStringError. */
+const CONFIG_COLUMNS = "id, user_id, company_id, phone_number_id, access_token, api_base_url, provider, instance_name, instance_token";
+
+function evoTarget(config: WhatsappConfig): evo.EvolutionTarget {
+  return {
+    base: config.api_base_url,
+    apikey: config.instance_token ?? "",
+    instance: config.instance_name ?? "",
+  };
+}
 
 type AiConfig = {
   enabled: boolean;
@@ -149,6 +166,39 @@ async function updateDeliveryStatus(
 // de novo pela URL pública seria uma volta desnecessária.
 type DownloadedMedia = { url: string; bytes: Uint8Array; mime: string };
 
+// Sobe os bytes para o bucket chat-media e devolve a URL pública.
+async function storeMedia(
+  bytes: Uint8Array,
+  mime: string,
+  config: WhatsappConfig,
+  msgId: string,
+  supabase: Db,
+  supabaseUrl: string,
+): Promise<DownloadedMedia | null> {
+  const extMap: Record<string, string> = {
+    "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
+    "video/mp4": "mp4", "audio/ogg": "ogg", "audio/mpeg": "mp3",
+    "application/pdf": "pdf",
+  };
+  const mimeKey = mime.split(";")[0].trim();
+  const ext = extMap[mimeKey] || "bin";
+  const filePath = `${config.company_id}/${msgId}.${ext}`;
+
+  const { error } = await supabase.storage
+    .from("chat-media")
+    .upload(filePath, bytes, { contentType: mimeKey, upsert: true });
+  if (error) {
+    console.error("storeMedia: upload falhou", error.message);
+    return null;
+  }
+
+  return {
+    url: `${supabaseUrl}/storage/v1/object/public/chat-media/${filePath}`,
+    bytes,
+    mime: mimeKey,
+  };
+}
+
 async function downloadMedia(
   mediaId: string,
   config: WhatsappConfig,
@@ -157,6 +207,18 @@ async function downloadMedia(
   supabase: Db,
   supabaseUrl: string,
 ): Promise<DownloadedMedia | null> {
+  // Baileys não expõe URL de mídia: o arquivo fica criptografado no servidor do
+  // WhatsApp e só o Evolution sabe abrir, devolvendo base64 pela chave da
+  // mensagem. Nada do fluxo da Meta abaixo se aplica.
+  if (config.provider === "evolution") {
+    const fetched = await evo.fetchMediaBase64(evoTarget(config), mediaId);
+    if (!fetched) {
+      console.error("downloadMedia: Evolution não devolveu a mídia", mediaId);
+      return null;
+    }
+    return await storeMedia(fetched.bytes, fetched.mime || mimetype, config, msgId, supabase, supabaseUrl);
+  }
+
   const base = resolveApiBase(config.api_base_url);
   const host = base.replace(/\/v\d+(\.\d+)?$/, "");
 
@@ -226,28 +288,7 @@ async function downloadMedia(
     if (!bytes) return null;
   }
 
-  const extMap: Record<string, string> = {
-    "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
-    "video/mp4": "mp4", "audio/ogg": "ogg", "audio/mpeg": "mp3",
-    "application/pdf": "pdf",
-  };
-  const mimeKey = resolvedMime.split(";")[0].trim();
-  const ext = extMap[mimeKey] || "bin";
-  const filePath = `${config.company_id}/${msgId}.${ext}`;
-
-  const { error } = await supabase.storage
-    .from("chat-media")
-    .upload(filePath, bytes, { contentType: mimeKey, upsert: true });
-  if (error) {
-    console.error("downloadMedia: upload falhou", error.message);
-    return null;
-  }
-
-  return {
-    url: `${supabaseUrl}/storage/v1/object/public/chat-media/${filePath}`,
-    bytes,
-    mime: mimeKey,
-  };
+  return await storeMedia(bytes, resolvedMime, config, msgId, supabase, supabaseUrl);
 }
 
 // Transcreve o áudio do lead. Sem isso o SDR IA recebe "[Áudio]" e responde no
@@ -426,6 +467,12 @@ async function findOrCreateContact(
 }
 
 async function sendWhatsappText(config: WhatsappConfig, phone: string, text: string): Promise<string | null> {
+  if (config.provider === "evolution") {
+    const { messageId, error } = await evo.sendText(evoTarget(config), phone, text);
+    if (error) console.error("sendWhatsappText (evolution) falhou", error);
+    return messageId;
+  }
+
   const base = resolveApiBase(config.api_base_url);
   const res = await fetch(`${base}/${config.phone_number_id}/messages`, {
     method: "POST",
@@ -503,6 +550,19 @@ async function sendWhatsappMedia(
   item: LibraryFile,
   caption: string,
 ): Promise<string | null> {
+  if (config.provider === "evolution") {
+    // O Evolution baixa a URL sozinho — não existe o upload em duas etapas.
+    const { messageId, error } = await evo.sendMedia(evoTarget(config), phone, {
+      url: item.file_url,
+      type: item.media_type,
+      mimetype: item.mimetype,
+      caption,
+      fileName: item.title,
+    });
+    if (error) console.error("sendWhatsappMedia (evolution) falhou", error);
+    return messageId;
+  }
+
   const base = resolveApiBase(config.api_base_url);
   const waType = ["image", "video", "document"].includes(item.media_type) ? item.media_type : "document";
 
@@ -798,31 +858,16 @@ async function maybeAiReply(
 // A Meta manda entry[].changes[] — echoes e mensagens costumam vir em changes
 // distintos (campos "messages" e "smb_message_echoes"), por isso cada change é
 // tratado separadamente.
+// A empresa já vem resolvida: cada provedor tem a sua chave de roteamento
+// (phone_number_id na Meta, token da instância no Evolution) e o lookup fica
+// com quem entende o payload.
 async function processChange(
   supabase: Db,
   supabaseUrl: string,
   field: string,
   value: Record<string, any>,
+  config: WhatsappConfig,
 ): Promise<void> {
-  const phoneNumberId: string | undefined = value.metadata?.phone_number_id;
-  if (!phoneNumberId) {
-    console.log("webhook: change sem phone_number_id", field, Object.keys(value).join(","));
-    return;
-  }
-
-  const { data: configRaw } = await supabase
-    .from("whatsapp_configs")
-    .select("id, user_id, company_id, phone_number_id, access_token, api_base_url")
-    .eq("phone_number_id", phoneNumberId)
-    .eq("active", true)
-    .maybeSingle();
-
-  const config = configRaw as WhatsappConfig | null;
-  if (!config) {
-    console.log("webhook: phone_number_id desconhecido", phoneNumberId);
-    return;
-  }
-
   for (const status of (value.statuses ?? []) as WhatsappStatus[]) {
     await updateDeliveryStatus(supabase, config.company_id, status);
   }
@@ -1260,6 +1305,42 @@ Deno.serve(async (req: Request) => {
 
   try {
     const payload = await req.json();
+
+    // Evolution API: envelope próprio ({ event, instance, apikey, data }), sem
+    // entry/changes. Normalizamos para o mesmo `value` da Meta e caímos no
+    // mesmo processChange — contato, mídia, IA e campanha são iguais nos dois.
+    if (payload?.event && payload?.instance) {
+      const normalized = evo.normalizeEvolutionPayload(payload);
+      if (!normalized) return json({ ok: true, ignored: "evento não reconhecido" });
+
+      // Roteamos pelo token da instância, não pelo nome: o servidor aceita
+      // nomes repetidos e duas empresas cairiam na mesma conversa.
+      if (!normalized.instanceToken) {
+        console.log("webhook(evolution): evento sem apikey", normalized.event, normalized.instanceName);
+        return json({ ok: true, ignored: "sem apikey" });
+      }
+
+      const { data: configRaw } = await supabase
+        .from("whatsapp_configs")
+        .select(CONFIG_COLUMNS)
+        .eq("instance_token", normalized.instanceToken)
+        .eq("active", true)
+        .maybeSingle();
+      const config = configRaw as WhatsappConfig | null;
+      if (!config) {
+        console.log("webhook(evolution): instância desconhecida", normalized.instanceName);
+        return json({ ok: true, ignored: "instância desconhecida" });
+      }
+
+      const { messages, message_echoes, statuses } = normalized.value;
+      if (messages.length === 0 && message_echoes.length === 0 && statuses.length === 0) {
+        return json({ ok: true, ignored: normalized.event });
+      }
+
+      await processChange(supabase, supabaseUrl, normalized.event, normalized.value, config);
+      return json({ ok: true });
+    }
+
     const entries = (payload?.entry ?? []) as Array<Record<string, any>>;
     if (entries.length === 0) return json({ ok: true, ignored: "no entry" });
 
@@ -1270,8 +1351,27 @@ Deno.serve(async (req: Request) => {
       for (const change of (entry.changes ?? []) as Array<Record<string, any>>) {
         const value = change?.value;
         if (!value) continue;
+
+        // Roteamento da Meta: o payload identifica a conta pelo phone_number_id.
+        const phoneNumberId: string | undefined = value.metadata?.phone_number_id;
+        if (!phoneNumberId) {
+          console.log("webhook: change sem phone_number_id", change.field, Object.keys(value).join(","));
+          continue;
+        }
+        const { data: configRaw } = await supabase
+          .from("whatsapp_configs")
+          .select(CONFIG_COLUMNS)
+          .eq("phone_number_id", phoneNumberId)
+          .eq("active", true)
+          .maybeSingle();
+        const config = configRaw as WhatsappConfig | null;
+        if (!config) {
+          console.log("webhook: phone_number_id desconhecido", phoneNumberId);
+          continue;
+        }
+
         processed++;
-        await processChange(supabase, supabaseUrl, String(change.field ?? "?"), value);
+        await processChange(supabase, supabaseUrl, String(change.field ?? "?"), value, config);
       }
     }
 

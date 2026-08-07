@@ -17,6 +17,17 @@ import {
   renderTemplateText,
   type VariableMap,
 } from "../_shared/whatsapp-template.ts";
+import * as evo from "../_shared/evolution.ts";
+
+/** Mesma convenção do follow-up de texto (sdr-followup/renderMessage). */
+function renderPlaceholders(template: string, contactName: string | null): string {
+  const name = (contactName ?? "").trim();
+  const firstName = name.split(/\s+/)[0] ?? "";
+  return template
+    .replace(/\{\{\s*nome\s*\}\}/gi, name)
+    .replace(/\{\{\s*primeiro_nome\s*\}\}/gi, firstName)
+    .trim();
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -85,8 +96,24 @@ Deno.serve(async (req: Request) => {
       const contactIds = (body.contact_ids as string[] | undefined) ?? [];
 
       if (!name) return json({ error: "Dê um nome para a campanha." }, 400);
-      if (!templateName) return json({ error: "Escolha um template aprovado." }, 400);
       if (contactIds.length === 0) return json({ error: "Selecione ao menos um contato." }, 400);
+
+      // No Evolution não existe template aprovado: a campanha é o próprio texto,
+      // que fica em template_body e passa pelo mesmo render de variáveis.
+      const { data: providerRow } = await supabase
+        .from("whatsapp_configs")
+        .select("provider")
+        .eq("company_id", companyId)
+        .maybeSingle();
+      const isEvolution = (providerRow as { provider?: string } | null)?.provider === "evolution";
+
+      if (isEvolution) {
+        if (!(body.template_body as string | undefined)?.trim()) {
+          return json({ error: "Escreva a mensagem da campanha." }, 400);
+        }
+      } else if (!templateName) {
+        return json({ error: "Escolha um template aprovado." }, 400);
+      }
 
       const { data: contactsRaw, error: contactsError } = await supabase
         .from("contacts")
@@ -114,7 +141,8 @@ Deno.serve(async (req: Request) => {
           company_id: companyId,
           user_id: user.id,
           name,
-          template_name: templateName,
+          // template_name é not null no schema; sem template real, marca a origem.
+          template_name: templateName || "texto-livre",
           template_language: (body.template_language as string | undefined)?.trim() || "pt_BR",
           template_body: (body.template_body as string | undefined) ?? null,
           variable_map: (body.variable_map as VariableMap | undefined) ?? {},
@@ -174,12 +202,18 @@ Deno.serve(async (req: Request) => {
 
     const { data: config } = await supabase
       .from("whatsapp_configs")
-      .select("phone_number_id, access_token, api_base_url, active")
+      .select("phone_number_id, access_token, api_base_url, active, provider, instance_name, instance_token")
       .eq("company_id", companyId)
       .maybeSingle();
     if (!config?.active) {
       return json({ error: "WhatsApp não configurado ou desativado." }, 400);
     }
+    const isEvolution = config.provider === "evolution";
+    const evoTarget: evo.EvolutionTarget = {
+      base: config.api_base_url as string,
+      apikey: (config.instance_token as string) ?? "",
+      instance: (config.instance_name as string) ?? "",
+    };
 
     const batchSize = Math.min(Number(body.batch_size) || DEFAULT_BATCH_SIZE, 50);
     const { data: targets } = await supabase
@@ -218,21 +252,40 @@ Deno.serve(async (req: Request) => {
         contact,
       );
 
+      // O texto que o contato recebe — e que também vai para o histórico do chat.
+      //
+      // No Evolution a campanha é texto livre, com os mesmos placeholders do
+      // follow-up ({{nome}}, {{primeiro_nome}}); na Meta são as variáveis
+      // numeradas do template, que o buildTemplatePayload já resolveu.
+      const renderedText = isEvolution
+        ? renderPlaceholders(campaign.template_body ?? "", contact.name)
+        : campaign.template_body
+          ? renderTemplateText(campaign.template_body, bodyParams)
+          : `[template: ${campaign.template_name}]`;
+
       try {
-        const res = await fetch(`${graphBase}/${config.phone_number_id}/messages`, {
-          method: "POST",
-          headers: graphHeaders,
-          body: JSON.stringify(payload),
-          signal: AbortSignal.timeout(20_000),
-        });
+        let wamid: string | null;
 
-        if (!res.ok) {
-          const raw = await res.text().catch(() => "");
-          throw new Error(parseWhatsAppApiError(raw));
+        if (isEvolution) {
+          const { messageId, error } = await evo.sendText(evoTarget, target.phone, renderedText);
+          if (error) throw new Error(error);
+          wamid = messageId;
+        } else {
+          const res = await fetch(`${graphBase}/${config.phone_number_id}/messages`, {
+            method: "POST",
+            headers: graphHeaders,
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(20_000),
+          });
+
+          if (!res.ok) {
+            const raw = await res.text().catch(() => "");
+            throw new Error(parseWhatsAppApiError(raw));
+          }
+
+          const data = await res.json().catch(() => ({})) as { messages?: Array<{ id?: string }> };
+          wamid = data.messages?.[0]?.id ?? null;
         }
-
-        const data = await res.json().catch(() => ({})) as { messages?: Array<{ id?: string }> };
-        const wamid = data.messages?.[0]?.id ?? null;
 
         await supabase
           .from("campaign_targets")
@@ -246,15 +299,13 @@ Deno.serve(async (req: Request) => {
             company_id: companyId,
             contact_id: target.contact_id,
             sender: "user",
-            content: campaign.template_body
-              ? renderTemplateText(campaign.template_body, bodyParams)
-              : `[template: ${campaign.template_name}]`,
+            content: renderedText,
             channel: "whatsapp",
             message_ref: wamid,
             metadata: {
               deliveryStatus: "sent",
-              isTemplate: true,
-              template: campaign.template_name,
+              isTemplate: !isEvolution,
+              ...(isEvolution ? {} : { template: campaign.template_name }),
               campaignId,
             },
           });

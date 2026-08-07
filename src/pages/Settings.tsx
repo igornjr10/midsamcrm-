@@ -1,9 +1,15 @@
-import { useEffect, useState } from "react";
-import { Copy, CheckCircle, Loader2, History, Settings as SettingsIcon } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Copy, CheckCircle, Loader2, History, QrCode, Settings as SettingsIcon, Unplug,
+} from "lucide-react";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase, SUPABASE_URL } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useWhatsappConfigQuery, useSaveWhatsappConfigMutation } from "@/hooks/queries";
+import {
+  useWhatsappConfigQuery, useSaveWhatsappConfigMutation, whatsappConfigQueryKey,
+} from "@/hooks/queries";
+import type { WhatsappProvider } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,10 +23,21 @@ function generateVerifyToken(): string {
   return "minicrm_" + Math.random().toString(36).slice(2, 12);
 }
 
+type InstanceState = "open" | "connecting" | "close" | "none" | "unknown";
+
+const STATE_LABEL: Record<InstanceState, string> = {
+  open: "Conectado",
+  connecting: "Aguardando leitura do QR",
+  close: "Desconectado",
+  none: "Nenhum número conectado",
+  unknown: "Não foi possível consultar",
+};
+
 export default function Settings() {
   const { user, company } = useAuth();
   const { data: config, isPending } = useWhatsappConfigQuery(company?.id);
   const saveConfig = useSaveWhatsappConfigMutation();
+  const queryClient = useQueryClient();
 
   const [phoneNumberId, setPhoneNumberId] = useState("");
   const [wabaId, setWabaId] = useState("");
@@ -31,16 +48,115 @@ export default function Settings() {
   const [statusLoading, setStatusLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
+  // Provedor em edição. Antes de existir config, o padrão é Evolution: conectar
+  // por QR não exige nada do cliente, e a Cloud API depende de credencial que
+  // só quem já tem conta Meta consegue.
+  const [provider, setProvider] = useState<WhatsappProvider>("evolution");
+  const [qr, setQr] = useState<string | null>(null);
+  const [instanceState, setInstanceState] = useState<InstanceState>("none");
+  const [connecting, setConnecting] = useState(false);
+  const pollRef = useRef<number | null>(null);
+
   const webhookUrl = `${SUPABASE_URL}/functions/v1/whatsapp-webhook`;
 
   useEffect(() => {
     if (!config) return;
-    setPhoneNumberId(config.phone_number_id);
-    setWabaId(config.waba_id);
-    setAccessToken(config.access_token);
+    setProvider(config.provider ?? "meta");
+    setPhoneNumberId(config.phone_number_id ?? "");
+    setWabaId(config.waba_id ?? "");
+    setAccessToken(config.access_token ?? "");
     setVerifyToken(config.webhook_verify_token);
     setLabel(config.label ?? "");
   }, [config]);
+
+  const callInstance = useCallback(
+    async (action: "connect" | "status" | "disconnect") => {
+      const { data, error } = await supabase.functions.invoke(
+        `evolution-instance?action=${action}`,
+        { body: { company_id: company?.id } },
+      );
+      if (error || data?.error) throw new Error(data?.error || error?.message);
+      return data as { connected?: boolean; state?: InstanceState; qr?: string | null };
+    },
+    [company?.id],
+  );
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current !== null) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  // Enquanto o QR está na tela, pergunta o estado a cada 3s. O Evolution não
+  // avisa o front quando o celular lê o código — só o próprio servidor sabe.
+  useEffect(() => {
+    if (!qr || !company?.id) return;
+    pollRef.current = window.setInterval(() => {
+      void callInstance("status")
+        .then((res) => {
+          setInstanceState(res.state ?? "unknown");
+          if (res.connected) {
+            stopPolling();
+            setQr(null);
+            toast.success("Número conectado!");
+            void queryClient.invalidateQueries({ queryKey: whatsappConfigQueryKey(company.id) });
+          }
+        })
+        .catch(() => {
+          /* servidor fora do ar: a próxima volta tenta de novo */
+        });
+    }, 3000);
+    return stopPolling;
+  }, [qr, company?.id, callInstance, stopPolling, queryClient]);
+
+  const handleConnect = async () => {
+    setConnecting(true);
+    try {
+      const res = await callInstance("connect");
+      setInstanceState(res.state ?? "unknown");
+      if (res.connected) {
+        setQr(null);
+        toast.success("Número já está conectado.");
+        void queryClient.invalidateQueries({ queryKey: whatsappConfigQueryKey(company!.id) });
+      } else if (res.qr) {
+        setQr(res.qr);
+      } else {
+        toast.error("O servidor não devolveu o QR code. Tente de novo.");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao conectar");
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    setConnecting(true);
+    try {
+      await callInstance("disconnect");
+      stopPolling();
+      setQr(null);
+      setInstanceState("close");
+      toast.success("Número desconectado.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao desconectar");
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const checkInstanceStatus = async () => {
+    setStatusLoading(true);
+    try {
+      const res = await callInstance("status");
+      setInstanceState(res.state ?? "unknown");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao consultar status");
+    } finally {
+      setStatusLoading(false);
+    }
+  };
 
   const copyToClipboard = (value: string) => {
     void navigator.clipboard.writeText(value);
@@ -57,6 +173,7 @@ export default function Settings() {
       await saveConfig.mutateAsync({
         user_id: user.id,
         company_id: company.id,
+        provider: "meta",
         phone_number_id: phoneNumberId.trim(),
         waba_id: wabaId.trim(),
         access_token: accessToken.trim(),
@@ -104,6 +221,12 @@ export default function Settings() {
     }
   };
 
+  // O Evolution devolve com o prefixo data: em algumas versões e sem ele em
+  // outras; normalizar aqui evita a imagem quebrada.
+  const qrSrc = qr && (qr.startsWith("data:") ? qr : `data:image/png;base64,${qr}`);
+
+  const connected = instanceState === "open";
+
   return (
     <div className="max-w-2xl">
       <PageHeader
@@ -112,6 +235,105 @@ export default function Settings() {
         description="Conexão do WhatsApp e integrações da empresa"
       />
 
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Como o WhatsApp conecta</CardTitle>
+          <CardDescription>
+            Ler o QR code conecta qualquer número em segundos. A Cloud API exige conta aprovada na Meta,
+            mas é a única que envia template fora da janela de 24h.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {([
+              ["evolution", "QR code", "Escaneia e pronto"],
+              ["meta", "Cloud API (Datafy)", "Credenciais da Meta"],
+            ] as const).map(([value, title, hint]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setProvider(value)}
+                className={`rounded-lg border p-3 text-left transition-colors ${
+                  provider === value
+                    ? "border-primary bg-primary/5 ring-1 ring-primary"
+                    : "hover:bg-accent/50"
+                }`}
+              >
+                <span className="block text-sm font-medium">{title}</span>
+                <span className="block text-xs text-muted-foreground">{hint}</span>
+              </button>
+            ))}
+          </div>
+          {config && config.provider !== provider && (
+            <p className="mt-3 rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
+              Esta empresa está usando{" "}
+              <span className="font-medium text-foreground">
+                {config.provider === "evolution" ? "QR code" : "Cloud API"}
+              </span>
+              . A troca só vale depois de conectar/salvar abaixo, e o histórico de conversas continua o mesmo.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {provider === "evolution" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex flex-wrap items-center gap-2">
+              Conexão por QR code
+              {connected && (
+                <Badge variant="success">
+                  <CheckCircle />
+                  Conectado
+                </Badge>
+              )}
+            </CardTitle>
+            <CardDescription>
+              No celular: WhatsApp → Aparelhos conectados → Conectar um aparelho. O QR expira em cerca de
+              um minuto; se passar, gere outro.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {qrSrc && (
+              <div className="flex flex-col items-center gap-3 rounded-lg border bg-card p-4">
+                <img src={qrSrc} alt="QR code para conectar o WhatsApp" className="h-56 w-56" />
+                <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Aguardando leitura...
+                </p>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Status:</span>
+              <span className="font-medium">{STATE_LABEL[instanceState]}</span>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => void handleConnect()} disabled={connecting}>
+                {connecting ? <Loader2 className="animate-spin" /> : <QrCode />}
+                {connected ? "Gerar novo QR" : qr ? "Gerar outro QR" : "Conectar número"}
+              </Button>
+              <Button variant="outline" onClick={() => void checkInstanceStatus()} disabled={statusLoading}>
+                {statusLoading && <Loader2 className="animate-spin" />}
+                Verificar status
+              </Button>
+              {config?.provider === "evolution" && (
+                <Button variant="outline" onClick={() => void handleDisconnect()} disabled={connecting}>
+                  <Unplug />
+                  Desconectar
+                </Button>
+              )}
+            </div>
+
+            <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
+              O webhook é apontado sozinho na criação — não precisa configurar nada no painel do Evolution.
+              Campanhas nesse modo saem como texto livre: template aprovado só existe na Cloud API.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+      <>
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>URL do Webhook</CardTitle>
@@ -249,6 +471,8 @@ export default function Settings() {
           )}
         </CardContent>
       </Card>
+      </>
+      )}
     </div>
   );
 }

@@ -422,3 +422,6 @@ verify_jwt = false
 
 [functions.admin-update-company]
 verify_jwt = false
+
+[functions.evolution-instance]
+verify_jwt = false

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Loader2, Search, Send, Sparkles } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { useContactsQuery, useWhatsappTemplatesQuery, usePipelineStagesQuery } from "@/hooks/queries";
+import {
+  useContactsQuery, useWhatsappTemplatesQuery, usePipelineStagesQuery, useWhatsappConfigQuery,
+} from "@/hooks/queries";
 import type { CreateCampaignInput } from "@/hooks/queries";
 import {
   CONTACT_FILTERS, getStageLabel, getStageTone, matchesContactFilter,
@@ -25,6 +27,7 @@ import {
 import VariableRow from "@/components/campaigns/VariableRow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -51,9 +54,13 @@ export default function NewCampaignDialog({
   const { data: stages = [] } = usePipelineStagesQuery(company?.id);
   const { data: templates = [], isPending: templatesLoading, error: templatesError } =
     useWhatsappTemplatesQuery(company?.id);
+  const { data: waConfig } = useWhatsappConfigQuery(company?.id);
+  const isEvolution = waConfig?.provider === "evolution";
 
   const [name, setName] = useState("");
   const [templateName, setTemplateName] = useState("");
+  // Texto da campanha quando a empresa está conectada por QR code.
+  const [freeText, setFreeText] = useState("");
   const [headerVars, setHeaderVars] = useState<VariableSource[]>([]);
   const [bodyVars, setBodyVars] = useState<VariableSource[]>([]);
   const [mediaUrl, setMediaUrl] = useState("");
@@ -106,6 +113,7 @@ export default function NewCampaignDialog({
     if (open) return;
     setName("");
     setTemplateName("");
+    setFreeText("");
     setSelectedIds(new Set());
     setSearch("");
     setStageFilter("all");
@@ -142,11 +150,27 @@ export default function NewCampaignDialog({
   };
 
   const missingMedia = !!headerMediaType && !mediaUrl.trim();
-  const canSubmit =
-    !!name.trim() && !!template && selectedIds.size > 0 && !missingMedia && !submitting;
+  const contentReady = isEvolution ? !!freeText.trim() : !!template && !missingMedia;
+  const canSubmit = !!name.trim() && contentReady && selectedIds.size > 0 && !submitting;
 
   const handleSubmit = () => {
-    if (!template || !canSubmit) return;
+    if (!canSubmit) return;
+
+    // O texto livre viaja em template_body: é o mesmo campo que a campanha já
+    // usa para o histórico do chat, e o backend faz o render dos placeholders.
+    if (isEvolution) {
+      onSubmit({
+        name: name.trim(),
+        template_name: "",
+        template_language: "pt_BR",
+        template_body: freeText.trim(),
+        variable_map: {},
+        contact_ids: [...selectedIds],
+      });
+      return;
+    }
+
+    if (!template) return;
     onSubmit({
       name: name.trim(),
       template_name: template.name,
@@ -179,6 +203,23 @@ export default function NewCampaignDialog({
             <p className="text-xs text-muted-foreground">Uso interno, o cliente não vê.</p>
           </div>
 
+          {isEvolution ? (
+            <div className="space-y-1.5">
+              <Label>Mensagem</Label>
+              <Textarea
+                rows={5}
+                placeholder="Oi {{primeiro_nome}}, tudo bem? ..."
+                value={freeText}
+                onChange={(e) => setFreeText(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Conectado por QR code não existe template aprovado — a mensagem sai como texto.{" "}
+                <span className="font-mono">{"{{nome}}"}</span> e{" "}
+                <span className="font-mono">{"{{primeiro_nome}}"}</span> são trocados pelo nome de cada
+                contato.
+              </p>
+            </div>
+          ) : (
           <div className="space-y-1.5">
             <Label>Template aprovado</Label>
             {templatesLoading ? (
@@ -216,8 +257,9 @@ export default function NewCampaignDialog({
               </Select>
             )}
           </div>
+          )}
 
-          {template && (
+          {!isEvolution && template && (
             <>
               {headerMediaType && (
                 <div className="space-y-1.5">

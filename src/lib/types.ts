@@ -102,13 +102,21 @@ export interface Appointment {
   updated_at: string;
 }
 
+export type WhatsappProvider = "meta" | "evolution" | "uazapi";
+
 export interface WhatsappConfig {
   id: string;
   user_id: string;
   company_id: string;
-  phone_number_id: string;
-  waba_id: string;
-  access_token: string;
+  provider: WhatsappProvider;
+  /** Nulos quando o provider não é "meta". */
+  phone_number_id: string | null;
+  waba_id: string | null;
+  access_token: string | null;
+  /** Instância nos provedores não-oficiais (Evolution, UAZAPI). */
+  instance_name: string | null;
+  instance_id: string | null;
+  instance_token: string | null;
   webhook_verify_token: string;
   app_id: string | null;
   active: boolean;
