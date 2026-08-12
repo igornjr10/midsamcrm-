@@ -4,7 +4,7 @@
 // "09/08 é domingo?" e a IA respondeu "quinta-feira de 2024". Data e dia da
 // semana são cálculo, não conhecimento: ficam no código e chegam prontos.
 
-const DEFAULT_TZ = "America/Sao_Paulo";
+export const DEFAULT_TZ = "America/Sao_Paulo";
 
 /** "Hoje é terça-feira, 04 de agosto de 2026." — vai no topo do system prompt. */
 export function todayBrief(timezone = DEFAULT_TZ, now = new Date()): string {
@@ -19,7 +19,7 @@ export function todayBrief(timezone = DEFAULT_TZ, now = new Date()): string {
 }
 
 /** Data local (YYYY-MM-DD) no fuso da empresa, não no UTC do servidor. */
-function localISO(timezone: string, date: Date): string {
+export function localISO(timezone: string, date: Date): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,
     year: "numeric",
@@ -92,7 +92,7 @@ export function describeDate(
  * Calculado comparando a data renderizada no fuso com o próprio instante —
  * não usa o fuso da máquina, que no servidor é UTC e no dev não é.
  */
-function tzOffsetMs(date: Date, timezone: string): number {
+export function tzOffsetMs(date: Date, timezone: string): number {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-US", {
       timeZone: timezone,

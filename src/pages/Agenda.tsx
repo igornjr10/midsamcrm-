@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
-  Ban, CalendarDays, CheckCheck, ChevronLeft, ChevronRight, Clock, MapPin, Plus, Trash2, User,
+  Ban, CalendarDays, CheckCheck, ChevronLeft, ChevronRight, Clock, MapPin, Plus, RefreshCw,
+  Trash2, User,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -10,6 +11,7 @@ import {
   useUpdateAppointmentMutation,
   useDeleteAppointmentMutation,
   useContactsQuery,
+  useGoogleCalendarAutoSync,
 } from "@/hooks/queries";
 import type { Appointment, AppointmentKind } from "@/lib/types";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -78,6 +80,9 @@ export default function Agenda() {
 
   const { data: appointments = [], isPending } = useAppointmentsQuery(company?.id, range);
   const { data: contacts = [] } = useContactsQuery(company?.id);
+  // Puxa o que mudou no Google antes de desenhar o mês. Não bloqueia nada: a
+  // agenda local aparece na hora e ganha os eventos de lá quando chegarem.
+  const googleSync = useGoogleCalendarAutoSync(company?.id);
   const createAppointment = useCreateAppointmentMutation();
   const updateAppointment = useUpdateAppointmentMutation();
   const deleteAppointment = useDeleteAppointmentMutation();
@@ -186,11 +191,15 @@ export default function Agenda() {
             : "Nenhum compromisso no mês"
         }
         badges={
-          todayCount > 0 ? (
-            <Badge variant="secondary">
-              {todayCount} hoje
-            </Badge>
-          ) : null
+          <>
+            {todayCount > 0 && <Badge variant="secondary">{todayCount} hoje</Badge>}
+            {googleSync.isFetching && (
+              <Badge variant="outline">
+                <RefreshCw className="h-3 w-3 animate-spin" />
+                Google
+              </Badge>
+            )}
+          </>
         }
         actions={
           <Button onClick={openCreate}>

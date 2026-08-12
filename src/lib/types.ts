@@ -99,8 +99,33 @@ export interface Appointment {
   ends_at: string | null;
   all_day: boolean;
   status: AppointmentStatus;
+  /** Evento correspondente no Google Calendar. Nulo = só existe no CRM. */
+  google_event_id: string | null;
+  google_synced_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** Estado da conexão com o Google Agenda, vindo da edge function. */
+export interface GoogleCalendarStatus {
+  connected: boolean;
+  /** false quando o acesso foi revogado na conta Google: precisa reconectar. */
+  active?: boolean;
+  google_email?: string | null;
+  calendar_id?: string | null;
+  last_sync_at?: string | null;
+  last_error?: string | null;
+}
+
+export interface GoogleCalendarSyncResult {
+  connected: boolean;
+  /** Compromissos enviados ao Google. */
+  pushed?: number;
+  failed?: number;
+  /** Mudanças que vieram do Google para a agenda. */
+  applied?: number;
+  needs_reconnect?: boolean;
+  error?: string | null;
 }
 
 export type WhatsappProvider = "meta" | "evolution" | "uazapi";
