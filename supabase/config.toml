@@ -431,3 +431,8 @@ verify_jwt = false
 
 [functions.whatsapp-history]
 verify_jwt = false
+
+# O Google redireciona o navegador do cliente para /callback sem JWT nenhum;
+# quem autentica essa volta e o cron do sync-all e a propria function.
+[functions.google-calendar]
+verify_jwt = false

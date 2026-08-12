@@ -2,6 +2,7 @@ export * from "./useContactsQuery";
 export * from "./usePipelineStagesQuery";
 export * from "./useLibraryQuery";
 export * from "./useAppointmentsQuery";
+export * from "./useGoogleCalendarQuery";
 export * from "./useConversationsQuery";
 export * from "./useWhatsappConfigQuery";
 export * from "./useAiConfigQuery";

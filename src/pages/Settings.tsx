@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
-  Copy, CheckCircle, Loader2, History, QrCode, Settings as SettingsIcon, Unplug,
+  CalendarDays, Copy, CheckCircle, Loader2, History, QrCode, RefreshCw,
+  Settings as SettingsIcon, Unplug,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -8,6 +10,8 @@ import { supabase, SUPABASE_URL } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import {
   useWhatsappConfigQuery, useSaveWhatsappConfigMutation, whatsappConfigQueryKey,
+  useGoogleCalendarQuery, useGoogleCalendarConnectMutation,
+  useGoogleCalendarDisconnectMutation, useGoogleCalendarSyncMutation, googleCalendarQueryKey,
 } from "@/hooks/queries";
 import type { WhatsappProvider } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -233,6 +237,74 @@ export default function Settings() {
       toast.error(err instanceof Error ? err.message : "Erro ao consultar status");
     } finally {
       setStatusLoading(false);
+    }
+  };
+
+  // ── Google Agenda ─────────────────────────────────────────────────────────
+  const { data: googleStatus, isPending: googlePending } = useGoogleCalendarQuery(company?.id);
+  const connectGoogle = useGoogleCalendarConnectMutation();
+  const disconnectGoogle = useGoogleCalendarDisconnectMutation();
+  const syncGoogle = useGoogleCalendarSyncMutation();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const googleConnected = !!googleStatus?.connected;
+  const googleNeedsReconnect = googleConnected && googleStatus?.active === false;
+
+  // Volta do consentimento do Google: a function redireciona para cá com o
+  // resultado na query string, que vira aviso e sai da URL — recarregar a
+  // página depois não repete a mensagem.
+  useEffect(() => {
+    const result = searchParams.get("google");
+    if (!result || !company) return;
+
+    if (result === "conectado") {
+      toast.success("Google Agenda conectado!");
+      void queryClient.invalidateQueries({ queryKey: googleCalendarQueryKey(company.id) });
+      void queryClient.invalidateQueries({ queryKey: ["appointments", company.id] });
+    } else {
+      toast.error(searchParams.get("google_msg") ?? "Não foi possível conectar o Google Agenda.");
+    }
+
+    const next = new URLSearchParams(searchParams);
+    next.delete("google");
+    next.delete("google_msg");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, queryClient, company]);
+
+  const handleConnectGoogle = async () => {
+    if (!company) return;
+    try {
+      await connectGoogle.mutateAsync(company.id);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao conectar o Google");
+    }
+  };
+
+  const handleSyncGoogle = async () => {
+    if (!company) return;
+    try {
+      const res = await syncGoogle.mutateAsync(company.id);
+      if (res.needs_reconnect) {
+        toast.error("O acesso ao Google foi revogado. Conecte a conta de novo.");
+      } else if (res.error) {
+        toast.error(res.error);
+      } else {
+        toast.success(
+          `Sincronizado: ${res.pushed ?? 0} enviados, ${res.applied ?? 0} recebidos do Google.`,
+        );
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao sincronizar");
+    }
+  };
+
+  const handleDisconnectGoogle = async () => {
+    if (!company) return;
+    try {
+      await disconnectGoogle.mutateAsync(company.id);
+      toast.success("Google Agenda desconectado.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao desconectar");
     }
   };
 
@@ -573,6 +645,101 @@ export default function Settings() {
       </Card>
       </>
       )}
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="flex flex-wrap items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-muted-foreground" />
+            Google Agenda
+            {googleConnected && !googleNeedsReconnect && (
+              <Badge variant="success">
+                <CheckCircle />
+                Conectado
+              </Badge>
+            )}
+            {googleNeedsReconnect && <Badge variant="outline">Reconectar</Badge>}
+          </CardTitle>
+          <CardDescription>
+            O que a equipe marca na Agenda aparece no Google Calendar da conta conectada, e o que for
+            marcado por lá entra aqui. Pedido do lead que o SDR IA registrou fica de fora enquanto
+            estiver "a confirmar" — só vai para o Google depois que alguém confirma.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {googlePending ? (
+            <div className="flex justify-center py-6">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <>
+              {googleConnected && (
+                <dl className="grid gap-x-4 gap-y-2 rounded-lg border bg-muted/40 p-4 text-sm sm:grid-cols-2">
+                  <div>
+                    <dt className="text-xs uppercase tracking-wide text-muted-foreground">Conta</dt>
+                    <dd className="mt-0.5 truncate font-medium">{googleStatus?.google_email ?? "—"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Última sincronização
+                    </dt>
+                    <dd className="mt-0.5 font-medium">
+                      {googleStatus?.last_sync_at
+                        ? new Date(googleStatus.last_sync_at).toLocaleString("pt-BR")
+                        : "Ainda não sincronizou"}
+                    </dd>
+                  </div>
+                </dl>
+              )}
+
+              {googleNeedsReconnect && (
+                <p className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-xs text-muted-foreground">
+                  O Google recusou o acesso — normalmente porque a permissão foi removida na conta.
+                  Conecte de novo para voltar a sincronizar.
+                </p>
+              )}
+
+              {googleStatus?.last_error && !googleNeedsReconnect && (
+                <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
+                  Último erro: {googleStatus.last_error}
+                </p>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => void handleConnectGoogle()} disabled={connectGoogle.isPending}>
+                  {connectGoogle.isPending ? <Loader2 className="animate-spin" /> : <CalendarDays />}
+                  {googleConnected ? "Conectar outra conta" : "Conectar Google Agenda"}
+                </Button>
+                {googleConnected && (
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={() => void handleSyncGoogle()}
+                      disabled={syncGoogle.isPending}
+                    >
+                      {syncGoogle.isPending ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                      Sincronizar agora
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => void handleDisconnectGoogle()}
+                      disabled={disconnectGoogle.isPending}
+                    >
+                      <Unplug />
+                      Desconectar
+                    </Button>
+                  </>
+                )}
+              </div>
+
+              <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
+                A Agenda sincroniza sozinha ao ser aberta. Cancelar um compromisso aqui apaga o evento
+                lá; apagar o evento no Google marca o compromisso como cancelado aqui, sem sumir com o
+                histórico.
+              </p>
+            </>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
