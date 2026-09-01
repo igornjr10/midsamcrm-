@@ -4,6 +4,8 @@ export * from "./useLibraryQuery";
 export * from "./useAppointmentsQuery";
 export * from "./useGoogleCalendarQuery";
 export * from "./useConversationsQuery";
+export * from "./useConversationReadsQuery";
+export * from "./useAtendimentoAlerts";
 export * from "./useWhatsappConfigQuery";
 export * from "./useAiConfigQuery";
 export * from "./useFollowupQuery";

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Send, Search, Loader2, Bot, Play, FileText, MessagesSquare, Mic, Library, Paperclip,
-  ArrowLeft,
+  ArrowLeft, Hand,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase, SUPABASE_URL } from "@/integrations/supabase/client";
@@ -16,6 +16,8 @@ import {
   usePipelineStagesQuery,
   useLibraryQuery,
   useAiConfigQuery,
+  useUnreadContacts,
+  useMarkConversationReadMutation,
 } from "@/hooks/queries";
 import {
   getStageLabel, getStageTone, getToneClasses, LIBRARY_KINDS,
@@ -54,6 +56,8 @@ export default function Chat() {
   const { data: library = [] } = useLibraryQuery(company?.id);
   const { data: aiConfig } = useAiConfigQuery(company?.id);
   const updateContact = useUpdateContactMutation();
+  const { unread } = useUnreadContacts(company?.id, user?.id);
+  const markRead = useMarkConversationReadMutation();
 
   const activeLibrary = useMemo(() => library.filter((i) => i.active), [library]);
 
@@ -92,6 +96,22 @@ export default function Chat() {
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ block: "end" });
   }, [messages.length, selectedContactId]);
+
+  // Abrir a conversa é ler. Depende de messages.length porque a mensagem que
+  // chega com a conversa já aberta também foi lida — senão a bolinha de não
+  // lido apareceria justamente para quem está com ela na tela.
+  //
+  // markRead fora das dependências de propósito: a mutation troca de
+  // identidade a cada render e o efeito viraria laço.
+  useEffect(() => {
+    if (!company || !user || !selectedContactId) return;
+    markRead.mutate({
+      company_id: company.id,
+      user_id: user.id,
+      contact_id: selectedContactId,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [company?.id, user?.id, selectedContactId, messages.length]);
 
   // A etapa do funil é editável aqui pelo mesmo motivo que no Pipeline: quem
   // está atendendo descobre no meio da conversa que o lead avançou.
@@ -255,6 +275,9 @@ export default function Chat() {
               {orderedContacts.map((contact) => {
                 const last = lastMessages?.get(contact.id);
                 const isSelected = selectedContactId === contact.id;
+                // Não lido só faz sentido em conversa fechada: a aberta está
+                // sendo lida agora, e piscaria a cada mensagem que chega.
+                const isUnread = unread.has(contact.id) && !isSelected;
                 return (
                   <button
                     key={contact.id}
@@ -287,16 +310,40 @@ export default function Chat() {
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center justify-between gap-2">
-                        <span className="truncate text-sm font-medium">{contact.name}</span>
-                        {last && (
-                          <span className="tabular shrink-0 text-[10px] text-muted-foreground">
-                            {timeLabel(last.created_at)}
-                          </span>
-                        )}
+                        <span
+                          className={cn(
+                            "truncate text-sm",
+                            isUnread ? "font-bold" : "font-medium",
+                          )}
+                        >
+                          {contact.name}
+                        </span>
+                        <span className="flex shrink-0 items-center gap-1.5">
+                          {last && (
+                            <span className="tabular text-[10px] text-muted-foreground">
+                              {timeLabel(last.created_at)}
+                            </span>
+                          )}
+                          {isUnread && <span className="h-2 w-2 rounded-full bg-primary" />}
+                        </span>
                       </span>
-                      <span className="block truncate text-xs text-muted-foreground">
+                      <span
+                        className={cn(
+                          "block truncate text-xs",
+                          isUnread ? "font-medium text-foreground" : "text-muted-foreground",
+                        )}
+                      >
                         {last ? last.content : "Sem mensagens"}
                       </span>
+                      {/* O lead pediu uma pessoa e a IA se calou esperando. É o
+                          item mais urgente da lista, por isso aparece aqui e
+                          não só dentro da conversa. */}
+                      {contact.needs_human_at && (
+                        <span className="mt-1 inline-flex max-w-full items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950 dark:text-amber-400">
+                          <Hand className="h-2.5 w-2.5 shrink-0" />
+                          <span className="truncate">Pediu atendente</span>
+                        </span>
+                      )}
                     </span>
                   </button>
                 );
@@ -427,7 +474,16 @@ export default function Chat() {
             {/* A IA parou sozinha: sem dizer isso, o silêncio dela parece defeito.
                 Um aviso de cada vez — quem assumiu a conversa manda, porque é o
                 único dos dois que tem botão para desfazer aqui. */}
-            {selectedContact.ai_paused && selectedContact.ai_paused_reason === "humano_respondeu" ? (
+            {selectedContact.needs_human_at ? (
+              <div className="flex items-center gap-2 border-b bg-rose-500/10 px-4 py-2 text-xs text-rose-700 dark:text-rose-400">
+                <Hand className="h-3.5 w-3.5 shrink-0" />
+                <span>
+                  <span className="font-semibold">O lead pediu uma pessoa</span>
+                  {selectedContact.needs_human_reason ? `: ${selectedContact.needs_human_reason}` : "."}{" "}
+                  A IA parou de responder e está esperando você. Qualquer mensagem sua encerra o pedido.
+                </span>
+              </div>
+            ) : selectedContact.ai_paused && selectedContact.ai_paused_reason === "humano_respondeu" ? (
               <div className="flex items-center gap-2 border-b bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-400">
                 <Bot className="h-3.5 w-3.5 shrink-0" />
                 <span>

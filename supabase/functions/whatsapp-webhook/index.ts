@@ -712,6 +712,64 @@ async function registerAppointmentRequest(
   return { ok: true, quando };
 }
 
+/**
+ * O lead pediu uma pessoa.
+ *
+ * A IA já sabia se calar quando um humano responde (0028); faltava o caminho
+ * inverso — o lead pedia atendente e aquilo morria dentro da conversa até
+ * alguém abrir o chat por acaso.
+ *
+ * Marca o contato e pausa a IA na mesma hora. Pausar é o ponto: continuar
+ * respondendo enquanto o lead espera gente é o que faz ele repetir "quero
+ * falar com alguém" três vezes. Quem despausa é o humano, pelo botão do Chat.
+ * O needs_human_at some sozinho quando alguém responde (trigger da 0038).
+ */
+async function registerHumanHandoff(
+  supabase: Db,
+  contactId: string,
+  motivo: string,
+): Promise<Record<string, unknown>> {
+  const { error } = await supabase
+    .from("contacts")
+    .update({
+      needs_human_at: new Date().toISOString(),
+      needs_human_reason: motivo.trim().slice(0, 300) || "Pediu para falar com uma pessoa",
+      ai_paused: true,
+      ai_paused_at: new Date().toISOString(),
+      ai_paused_reason: "pediu_atendente",
+    })
+    .eq("id", contactId);
+
+  if (error) {
+    console.error("registerHumanHandoff falhou", error.message);
+    return { erro: "não foi possível avisar a equipe" };
+  }
+  return { ok: true, avisado: true };
+}
+
+const CHAMAR_HUMANO_TOOL = {
+  type: "function",
+  function: {
+    name: "chamar_humano",
+    description:
+      "Avisa a equipe de que este lead precisa de uma pessoa. Chame quando ele pedir para falar " +
+      "com alguém, reclamar, ficar irritado, ou perguntar algo que você não pode responder " +
+      "(preço fora da tabela, exceção, problema com pedido já feito). Depois de chamar, diga ao " +
+      "lead que alguém da equipe assume a conversa — e não invente a resposta que faltava.",
+    parameters: {
+      type: "object",
+      properties: {
+        motivo: {
+          type: "string",
+          description:
+            "Em uma frase, o que o lead quer — é o que a equipe lê antes de abrir a conversa.",
+        },
+      },
+      required: ["motivo"],
+    },
+  },
+};
+
 // SDR IA: gera e envia a resposta automática quando habilitada para a empresa.
 async function maybeAiReply(
   supabase: Db,
@@ -772,7 +830,9 @@ async function maybeAiReply(
         "consultar_agenda antes de dizer que uma data está livre ou ocupada. " +
         "Nunca confirme uma reserva por conta própria: diga que vai confirmar com a equipe. " +
         "Quando o lead propuser um dia (com ou sem horário), chame registrar_agendamento " +
-        "para abrir a tarefa de confirmação antes de responder." +
+        "para abrir a tarefa de confirmação antes de responder. " +
+        "Se ele pedir para falar com uma pessoa, reclamar, ou perguntar algo que você não pode " +
+        "responder com segurança, chame chamar_humano em vez de improvisar." +
         libraryBrief,
     },
     ...((history ?? []) as Array<{ sender: string; content: string }>)
@@ -785,7 +845,7 @@ async function maybeAiReply(
   ];
 
   const tools: Array<Record<string, unknown>> = [
-    CONSULTAR_DATA_TOOL, CONSULTAR_AGENDA_TOOL, REGISTRAR_AGENDAMENTO_TOOL,
+    CONSULTAR_DATA_TOOL, CONSULTAR_AGENDA_TOOL, REGISTRAR_AGENDAMENTO_TOOL, CHAMAR_HUMANO_TOOL,
   ];
   if (library.length > 0) {
     tools.push({
@@ -941,6 +1001,26 @@ async function maybeAiReply(
 
         // Devolve ao modelo e segue: ele ainda precisa responder ao lead que
         // vai confirmar. Sem isto o turno acabaria sem resposta nenhuma.
+        messages.push({
+          role: "assistant",
+          content: choice.content ?? null,
+          tool_calls: choice.tool_calls,
+        });
+        messages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: JSON.stringify(result),
+        });
+        continue;
+      }
+
+      if (call?.function?.name === "chamar_humano") {
+        const args = JSON.parse(call.function.arguments || "{}") as { motivo?: string };
+        const result = await registerHumanHandoff(supabase, contact.id, args.motivo ?? "");
+
+        // Devolve ao modelo e segue: ele ainda precisa dizer ao lead que a
+        // equipe assume daqui. Esta é a última mensagem da IA nessa conversa —
+        // o handoff já a deixou pausada.
         messages.push({
           role: "assistant",
           content: choice.content ?? null,

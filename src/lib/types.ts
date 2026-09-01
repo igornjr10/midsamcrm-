@@ -17,8 +17,15 @@ export interface Contact {
   ai_paused: boolean;
   /** Quando a IA foi pausada nesta conversa. */
   ai_paused_at: string | null;
-  /** "humano_respondeu" quando a pausa foi automática; null quando foi manual. */
-  ai_paused_reason: "humano_respondeu" | null;
+  /**
+   * "humano_respondeu" quando a pausa foi automática; "pediu_atendente" quando
+   * a própria IA se calou para chamar gente; null quando foi manual.
+   */
+  ai_paused_reason: "humano_respondeu" | "pediu_atendente" | null;
+  /** Quando o lead pediu uma pessoa. Some assim que alguém responde. */
+  needs_human_at: string | null;
+  /** O que ele queria, na descrição da IA. */
+  needs_human_reason: string | null;
   /** Última mensagem de qualquer lado. Mantida por trigger em conversations. */
   last_interaction_at: string | null;
   /** Última mensagem recebida do lead. */
