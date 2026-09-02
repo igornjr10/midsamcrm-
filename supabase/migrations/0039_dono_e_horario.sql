@@ -33,7 +33,7 @@ create index if not exists idx_contacts_assigned
 --
 -- SECURITY DEFINER com o filtro de empresa dentro: sem ele, qualquer usuário
 -- autenticado listaria os membros e e-mails de qualquer empresa da plataforma.
-create or replace function public.company_team(p_company_id uuid)
+create or replace function public.company_team_members(p_company_id uuid)
 returns table (user_id uuid, email text, full_name text, role text)
 language sql
 stable
@@ -56,7 +56,7 @@ as $$
   order by (m.role = 'admin') desc, u.email;
 $$;
 
-grant execute on function public.company_team(uuid) to authenticated;
+grant execute on function public.company_team_members(uuid) to authenticated;
 
 -- ── 2. Horário de atendimento da IA ─────────────────────────────────────────
 -- Desligado por padrão: quem já está rodando com a IA 24h não pode emudecer de

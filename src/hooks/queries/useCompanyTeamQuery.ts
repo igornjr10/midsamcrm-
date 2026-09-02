@@ -18,7 +18,7 @@ export function useCompanyTeamQuery(companyId: string | undefined) {
     queryKey: companyTeamQueryKey(companyId),
     queryFn: async () => {
       if (!companyId) return [];
-      const { data, error } = await supabase.rpc("company_team", { p_company_id: companyId });
+      const { data, error } = await supabase.rpc("company_team_members", { p_company_id: companyId });
       if (error) throw error;
       return (data ?? []) as CompanyTeamMember[];
     },
