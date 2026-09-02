@@ -17,8 +17,18 @@ export interface Contact {
   ai_paused: boolean;
   /** Quando a IA foi pausada nesta conversa. */
   ai_paused_at: string | null;
-  /** "humano_respondeu" quando a pausa foi automática; null quando foi manual. */
-  ai_paused_reason: "humano_respondeu" | null;
+  /**
+   * "humano_respondeu" quando a pausa foi automática; "pediu_atendente" quando
+   * a própria IA se calou para chamar gente; null quando foi manual.
+   */
+  ai_paused_reason: "humano_respondeu" | "pediu_atendente" | null;
+  /** Atendente responsável. Null = ninguém pegou, a conversa é da fila. */
+  assigned_to: string | null;
+  assigned_at: string | null;
+  /** Quando o lead pediu uma pessoa. Some assim que alguém responde. */
+  needs_human_at: string | null;
+  /** O que ele queria, na descrição da IA. */
+  needs_human_reason: string | null;
   /** Última mensagem de qualquer lado. Mantida por trigger em conversations. */
   last_interaction_at: string | null;
   /** Última mensagem recebida do lead. */
@@ -171,8 +181,28 @@ export interface AiConfig {
   followup_window_end: number;
   followup_skip_weekends: boolean;
   followup_only_open_stages: boolean;
+  // Horário de atendimento da IA. Desligado = ela responde a qualquer hora.
+  reply_window_enabled: boolean;
+  reply_window_start: number;
+  reply_window_end: number;
+  reply_skip_weekends: boolean;
+  /** Aviso mandado uma vez a cada 12h fora do horário. Null = silêncio total. */
+  reply_offhours_message: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** Membro da empresa que pode ser responsável por uma conversa. */
+export interface CompanyTeamMember {
+  user_id: string;
+  email: string;
+  full_name: string | null;
+  role: string;
+}
+
+/** Nome curto de um atendente: o que cabe num seletor de 1 linha. */
+export function teamLabel(member: CompanyTeamMember): string {
+  return member.full_name?.trim() || member.email.split("@")[0];
 }
 
 /**

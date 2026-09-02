@@ -8,7 +8,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import {
   CONSULTAR_AGENDA_TOOL, CONSULTAR_DATA_TOOL, REGISTRAR_AGENDAMENTO_TOOL,
-  dayRange, describeDate, localDateTime, todayBrief,
+  dayRange, describeDate, localClock, localDateTime, todayBrief,
 } from "../_shared/date.ts";
 import * as evo from "../_shared/evolution.ts";
 import * as uaz from "../_shared/uazapi.ts";
@@ -97,6 +97,12 @@ type AiConfig = {
   followup_timezone: string | null;
   /** A IA não fala com contato em etapa de Ganho ou Perdido. */
   ai_only_open_stages: boolean | null;
+  /** Horário de atendimento da IA (0039). Desligado = responde a qualquer hora. */
+  reply_window_enabled: boolean | null;
+  reply_window_start: number | null;
+  reply_window_end: number | null;
+  reply_skip_weekends: boolean | null;
+  reply_offhours_message: string | null;
 };
 
 async function updateDeliveryStatus(
@@ -712,6 +718,121 @@ async function registerAppointmentRequest(
   return { ok: true, quando };
 }
 
+/**
+ * O lead pediu uma pessoa.
+ *
+ * A IA já sabia se calar quando um humano responde (0028); faltava o caminho
+ * inverso — o lead pedia atendente e aquilo morria dentro da conversa até
+ * alguém abrir o chat por acaso.
+ *
+ * Marca o contato e pausa a IA na mesma hora. Pausar é o ponto: continuar
+ * respondendo enquanto o lead espera gente é o que faz ele repetir "quero
+ * falar com alguém" três vezes. Quem despausa é o humano, pelo botão do Chat.
+ * O needs_human_at some sozinho quando alguém responde (trigger da 0038).
+ */
+async function registerHumanHandoff(
+  supabase: Db,
+  contactId: string,
+  motivo: string,
+): Promise<Record<string, unknown>> {
+  const { error } = await supabase
+    .from("contacts")
+    .update({
+      needs_human_at: new Date().toISOString(),
+      needs_human_reason: motivo.trim().slice(0, 300) || "Pediu para falar com uma pessoa",
+      ai_paused: true,
+      ai_paused_at: new Date().toISOString(),
+      ai_paused_reason: "pediu_atendente",
+    })
+    .eq("id", contactId);
+
+  if (error) {
+    console.error("registerHumanHandoff falhou", error.message);
+    return { erro: "não foi possível avisar a equipe" };
+  }
+  return { ok: true, avisado: true };
+}
+
+/** A empresa está atendendo agora? Sem janela configurada, sempre. */
+function insideReplyWindow(aiConfig: AiConfig, timezone: string): boolean {
+  if (!aiConfig.reply_window_enabled) return true;
+
+  const { hour, weekday } = localClock(timezone);
+  if (aiConfig.reply_skip_weekends && (weekday === 0 || weekday === 6)) return false;
+
+  const start = aiConfig.reply_window_start ?? 8;
+  const end = aiConfig.reply_window_end ?? 20;
+  // Fim exclusivo: janela até 20 atende 19:59 e para às 20:00 em ponto.
+  return hour >= start && hour < end;
+}
+
+/**
+ * Doze horas entre um aviso de "estamos fechados" e o seguinte.
+ *
+ * Sem isso o lead que manda cinco mensagens à meia-noite recebe cinco vezes a
+ * mesma frase — e o aviso, que existe para ele não ficar no vácuo, vira o
+ * próprio incômodo.
+ */
+const OFFHOURS_SILENCE_MS = 12 * 3_600_000;
+
+async function sendOffHoursNotice(
+  supabase: Db,
+  config: WhatsappConfig,
+  contactId: string,
+  fromPhone: string,
+  message: string,
+): Promise<void> {
+  const { data: last } = await supabase
+    .from("conversations")
+    .select("created_at")
+    .eq("contact_id", contactId)
+    .eq("metadata->>offhours", "true")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const lastAt = (last as { created_at?: string } | null)?.created_at;
+  if (lastAt && Date.now() - Date.parse(lastAt) < OFFHOURS_SILENCE_MS) return;
+
+  const wamid = await sendWhatsappText(config, fromPhone, message);
+  if (!wamid) return;
+
+  await supabase.from("conversations").insert({
+    user_id: config.user_id,
+    company_id: config.company_id,
+    contact_id: contactId,
+    sender: "ai",
+    content: message,
+    channel: "whatsapp",
+    message_ref: wamid,
+    // offhours marca a linha para o próximo aviso saber quando foi o anterior.
+    metadata: { deliveryStatus: "sent", offhours: true },
+  });
+}
+
+const CHAMAR_HUMANO_TOOL = {
+  type: "function",
+  function: {
+    name: "chamar_humano",
+    description:
+      "Avisa a equipe de que este lead precisa de uma pessoa. Chame quando ele pedir para falar " +
+      "com alguém, reclamar, ficar irritado, ou perguntar algo que você não pode responder " +
+      "(preço fora da tabela, exceção, problema com pedido já feito). Depois de chamar, diga ao " +
+      "lead que alguém da equipe assume a conversa — e não invente a resposta que faltava.",
+    parameters: {
+      type: "object",
+      properties: {
+        motivo: {
+          type: "string",
+          description:
+            "Em uma frase, o que o lead quer — é o que a equipe lê antes de abrir a conversa.",
+        },
+      },
+      required: ["motivo"],
+    },
+  },
+};
+
 // SDR IA: gera e envia a resposta automática quando habilitada para a empresa.
 async function maybeAiReply(
   supabase: Db,
@@ -733,6 +854,17 @@ async function maybeAiReply(
       p_contact_id: contact.id,
     });
     if (closed === true) return;
+  }
+
+  const timezone = aiConfig.followup_timezone?.trim() || "America/Sao_Paulo";
+
+  // Fora do horário de atendimento: a IA se cala. A mensagem do lead continua
+  // na fila, não lida, para a equipe ver de manhã — o aviso opcional serve só
+  // para ele não achar que falou com a parede.
+  if (!insideReplyWindow(aiConfig, timezone)) {
+    const aviso = aiConfig.reply_offhours_message?.trim();
+    if (aviso) await sendOffHoursNotice(supabase, config, contact.id, fromPhone, aviso);
+    return;
   }
 
   if (!apiKey) {
@@ -759,7 +891,6 @@ async function maybeAiReply(
       "\nEnvie um arquivo só quando ele responder o que o lead pediu. Nunca invente arquivo que não esteja nesta lista."
     : "";
 
-  const timezone = aiConfig.followup_timezone?.trim() || "America/Sao_Paulo";
 
   const messages: Array<Record<string, unknown>> = [
     {
@@ -772,7 +903,9 @@ async function maybeAiReply(
         "consultar_agenda antes de dizer que uma data está livre ou ocupada. " +
         "Nunca confirme uma reserva por conta própria: diga que vai confirmar com a equipe. " +
         "Quando o lead propuser um dia (com ou sem horário), chame registrar_agendamento " +
-        "para abrir a tarefa de confirmação antes de responder." +
+        "para abrir a tarefa de confirmação antes de responder. " +
+        "Se ele pedir para falar com uma pessoa, reclamar, ou perguntar algo que você não pode " +
+        "responder com segurança, chame chamar_humano em vez de improvisar." +
         libraryBrief,
     },
     ...((history ?? []) as Array<{ sender: string; content: string }>)
@@ -785,7 +918,7 @@ async function maybeAiReply(
   ];
 
   const tools: Array<Record<string, unknown>> = [
-    CONSULTAR_DATA_TOOL, CONSULTAR_AGENDA_TOOL, REGISTRAR_AGENDAMENTO_TOOL,
+    CONSULTAR_DATA_TOOL, CONSULTAR_AGENDA_TOOL, REGISTRAR_AGENDAMENTO_TOOL, CHAMAR_HUMANO_TOOL,
   ];
   if (library.length > 0) {
     tools.push({
@@ -941,6 +1074,26 @@ async function maybeAiReply(
 
         // Devolve ao modelo e segue: ele ainda precisa responder ao lead que
         // vai confirmar. Sem isto o turno acabaria sem resposta nenhuma.
+        messages.push({
+          role: "assistant",
+          content: choice.content ?? null,
+          tool_calls: choice.tool_calls,
+        });
+        messages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: JSON.stringify(result),
+        });
+        continue;
+      }
+
+      if (call?.function?.name === "chamar_humano") {
+        const args = JSON.parse(call.function.arguments || "{}") as { motivo?: string };
+        const result = await registerHumanHandoff(supabase, contact.id, args.motivo ?? "");
+
+        // Devolve ao modelo e segue: ele ainda precisa dizer ao lead que a
+        // equipe assume daqui. Esta é a última mensagem da IA nessa conversa —
+        // o handoff já a deixou pausada.
         messages.push({
           role: "assistant",
           content: choice.content ?? null,

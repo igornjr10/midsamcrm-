@@ -23,6 +23,10 @@ const DEFAULT_PROMPT =
   "procura e a urgência. Nunca invente preços, prazos ou condições — se não souber, diga que um " +
   "atendente humano vai confirmar.";
 
+// 0..24: o começo da janela vai até 23h e o fim começa em 1h (ver os slice()
+// mais abaixo), então a lista precisa das duas pontas.
+const HOURS = Array.from({ length: 25 }, (_, i) => i);
+
 const MODELS = [
   { value: "gpt-4o-mini", label: "GPT-4o mini (rápido e barato)" },
   { value: "gpt-4o", label: "GPT-4o (mais inteligente)" },
@@ -40,6 +44,11 @@ export default function SdrIa() {
   const [apiKey, setApiKey] = useState("");
   const [pauseOnHuman, setPauseOnHuman] = useState(true);
   const [onlyOpenStages, setOnlyOpenStages] = useState(true);
+  const [windowEnabled, setWindowEnabled] = useState(false);
+  const [windowStart, setWindowStart] = useState(8);
+  const [windowEnd, setWindowEnd] = useState(20);
+  const [skipWeekends, setSkipWeekends] = useState(false);
+  const [offhoursMessage, setOffhoursMessage] = useState("");
 
   useEffect(() => {
     if (!config) return;
@@ -49,12 +58,21 @@ export default function SdrIa() {
     setApiKey(config.openai_api_key ?? "");
     setPauseOnHuman(config.pause_ai_on_human_reply ?? true);
     setOnlyOpenStages(config.ai_only_open_stages ?? true);
+    setWindowEnabled(config.reply_window_enabled ?? false);
+    setWindowStart(config.reply_window_start ?? 8);
+    setWindowEnd(config.reply_window_end ?? 20);
+    setSkipWeekends(config.reply_skip_weekends ?? false);
+    setOffhoursMessage(config.reply_offhours_message ?? "");
   }, [config]);
 
   const handleSave = async () => {
     if (!company) return;
     if (enabled && !apiKey.trim()) {
       toast.error("Informe a chave da OpenAI para ligar o SDR IA.");
+      return;
+    }
+    if (windowEnabled && windowEnd <= windowStart) {
+      toast.error("O fim do horário de atendimento tem que ser depois do início.");
       return;
     }
     try {
@@ -66,6 +84,11 @@ export default function SdrIa() {
         openai_api_key: apiKey.trim() || null,
         pause_ai_on_human_reply: pauseOnHuman,
         ai_only_open_stages: onlyOpenStages,
+        reply_window_enabled: windowEnabled,
+        reply_window_start: windowStart,
+        reply_window_end: windowEnd,
+        reply_skip_weekends: skipWeekends,
+        reply_offhours_message: offhoursMessage.trim() || null,
       });
       toast.success(enabled ? "SDR IA ligado! Novas mensagens de leads serão respondidas automaticamente." : "Configuração salva.");
     } catch (err) {
@@ -211,6 +234,100 @@ export default function SdrIa() {
                         onChange={(e) => setApiKey(e.target.value)}
                       />
                     </div>
+                  </div>
+
+                  {/* Horário de atendimento.
+                      A janela do follow-up (aba ao lado) é outra coisa: lá o
+                      cron escolhe a hora de falar com quem sumiu. Aqui é a
+                      resposta a quem acabou de escrever — que até então saía a
+                      qualquer hora da madrugada. */}
+                  <div className="space-y-3 rounded-lg border p-4">
+                    <label className="flex cursor-pointer items-start gap-3">
+                      <Checkbox
+                        checked={windowEnabled}
+                        onCheckedChange={(v) => setWindowEnabled(v === true)}
+                        className="mt-0.5"
+                      />
+                      <div>
+                        <p className="text-sm font-medium">Responder só em horário de atendimento</p>
+                        <p className="text-xs text-muted-foreground">
+                          Fora dele a IA fica calada e a mensagem do lead espera não lida, para a
+                          equipe ver no dia seguinte
+                        </p>
+                      </div>
+                    </label>
+
+                    {windowEnabled && (
+                      <>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div className="space-y-1.5">
+                            <Label>Atender a partir das</Label>
+                            <Select
+                              value={String(windowStart)}
+                              onValueChange={(v) => setWindowStart(Number(v))}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {HOURS.slice(0, 24).map((h) => (
+                                  <SelectItem key={h} value={String(h)}>
+                                    {String(h).padStart(2, "0")}:00
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label>Até</Label>
+                            <Select
+                              value={String(windowEnd)}
+                              onValueChange={(v) => setWindowEnd(Number(v))}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {HOURS.slice(1).map((h) => (
+                                  <SelectItem key={h} value={String(h)}>
+                                    {String(h).padStart(2, "0")}:00
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+
+                        <label className="flex cursor-pointer items-center gap-2 text-sm">
+                          <Checkbox
+                            checked={skipWeekends}
+                            onCheckedChange={(v) => setSkipWeekends(v === true)}
+                          />
+                          Não atender aos sábados e domingos
+                        </label>
+
+                        <div className="space-y-1.5">
+                          <Label>Aviso fora do horário (opcional)</Label>
+                          <Textarea
+                            rows={2}
+                            placeholder="Oi! Nosso atendimento é das 8h às 20h. Sua mensagem já está aqui e respondemos logo cedo."
+                            value={offhoursMessage}
+                            onChange={(e) => setOffhoursMessage(e.target.value)}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Mandado no máximo uma vez a cada 12h por contato — quem escreve cinco
+                            vezes de madrugada não recebe a mesma frase cinco vezes. Em branco, a IA
+                            simplesmente não responde.
+                          </p>
+                        </div>
+
+                        <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
+                          Usa o fuso configurado na aba Follow-up (
+                          {(config?.followup_timezone ?? "America/Sao_Paulo").replace("America/", "").replace("_", " ")}
+                          ).
+                        </p>
+                      </>
+                    )}
                   </div>
 
                   <Button onClick={handleSave} disabled={saveConfig.isPending}>
