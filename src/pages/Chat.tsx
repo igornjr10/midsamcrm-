@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Send, Search, Loader2, Bot, Play, FileText, MessagesSquare, Mic, Library, Paperclip,
-  ArrowLeft, Hand,
+  ArrowLeft, Hand, UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase, SUPABASE_URL } from "@/integrations/supabase/client";
@@ -18,9 +18,10 @@ import {
   useAiConfigQuery,
   useUnreadContacts,
   useMarkConversationReadMutation,
+  useCompanyTeamQuery,
 } from "@/hooks/queries";
 import {
-  getStageLabel, getStageTone, getToneClasses, LIBRARY_KINDS,
+  getStageLabel, getStageTone, getToneClasses, LIBRARY_KINDS, teamLabel,
   type Contact, type LibraryItem,
 } from "@/lib/types";
 import SendTemplateDialog from "@/components/chat/SendTemplateDialog";
@@ -58,10 +59,15 @@ export default function Chat() {
   const updateContact = useUpdateContactMutation();
   const { unread } = useUnreadContacts(company?.id, user?.id);
   const markRead = useMarkConversationReadMutation();
+  const { data: team = [] } = useCompanyTeamQuery(company?.id);
 
   const activeLibrary = useMemo(() => library.filter((i) => i.active), [library]);
 
   const [search, setSearch] = useState("");
+  // "livres" é a fila de quem ainda não tem dono — o que sobra para alguém
+  // pegar. Com um atendente só, os três filtros dão quase a mesma lista e o
+  // padrão "todos" não atrapalha ninguém.
+  const [fila, setFila] = useState<"todos" | "meus" | "livres">("todos");
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
@@ -71,6 +77,7 @@ export default function Chat() {
 
   const selectedContact: Contact | null =
     contacts.find((c) => c.id === selectedContactId) ?? null;
+  const assignedMember = team.find((m) => m.user_id === selectedContact?.assigned_to) ?? null;
 
   // A IA também cala em negócio fechado, e isso não passa por ai_paused: é a
   // etapa que decide, a cada mensagem. Sem dizer aqui, some sem explicação.
@@ -85,13 +92,18 @@ export default function Chat() {
     const term = search.trim().toLowerCase();
     return contacts
       .filter((c) => !term || c.name.toLowerCase().includes(term) || c.phone?.includes(term))
+      .filter((c) => {
+        if (fila === "meus") return c.assigned_to === user?.id;
+        if (fila === "livres") return !c.assigned_to;
+        return true;
+      })
       .slice()
       .sort((a, b) => {
         const aTime = lastMessages?.get(a.id)?.created_at ?? a.created_at;
         const bTime = lastMessages?.get(b.id)?.created_at ?? b.created_at;
         return new Date(bTime).getTime() - new Date(aTime).getTime();
       });
-  }, [contacts, lastMessages, search]);
+  }, [contacts, lastMessages, search, fila, user?.id]);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ block: "end" });
@@ -122,6 +134,28 @@ export default function Chat() {
       toast.success(`Etapa: ${getStageLabel(stages, stage)}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erro ao mudar a etapa");
+    }
+  };
+
+  // Quem responde por esta conversa. "none" devolve para a fila.
+  const handleAssign = async (value: string) => {
+    if (!company || !selectedContact) return;
+    const assignedTo = value === "none" ? null : value;
+    try {
+      await updateContact.mutateAsync({
+        id: selectedContact.id,
+        company_id: company.id,
+        assigned_to: assignedTo,
+        assigned_at: assignedTo ? new Date().toISOString() : null,
+      });
+      const dono = team.find((m) => m.user_id === assignedTo);
+      toast.success(
+        assignedTo
+          ? `Conversa com ${assignedTo === user?.id ? "você" : dono ? teamLabel(dono) : "o atendente"}`
+          : "Conversa devolvida para a fila",
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao definir o responsável");
     }
   };
 
@@ -261,6 +295,31 @@ export default function Chat() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          {/* A fila só faz sentido com mais de uma pessoa atendendo: com um
+              atendente só, os três filtros dariam a mesma lista. */}
+          {team.length > 1 && (
+            <div className="mt-2 flex gap-1">
+              {([
+                ["todos", "Todos"],
+                ["meus", "Meus"],
+                ["livres", "Sem dono"],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setFila(value)}
+                  className={cn(
+                    "rounded-md px-2 py-1 text-xs font-medium transition-colors",
+                    fila === value
+                      ? "bg-accent text-accent-foreground"
+                      : "text-muted-foreground hover:bg-accent/50",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <ScrollArea className="flex-1">
           {orderedContacts.length === 0 ? (
@@ -408,6 +467,41 @@ export default function Chat() {
                               <span className={cn("h-1.5 w-1.5 rounded-full", getToneClasses(s.tone).dot)} />
                               {s.name}
                             </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {/* Quem responde por esta conversa. Sem dono ela é da fila:
+                        todo mundo vê, e é assim que dois atendentes respondem o
+                        mesmo lead sem saber. */}
+                    <Select
+                      value={selectedContact.assigned_to ?? "none"}
+                      onValueChange={(v) => void handleAssign(v)}
+                    >
+                      <SelectTrigger
+                        aria-label="Responsável pela conversa"
+                        className={cn(
+                          "h-6 w-auto shrink-0 gap-1.5 rounded-full px-2 text-xs font-medium",
+                          selectedContact.assigned_to
+                            ? "border-primary/40 bg-primary/5 text-primary"
+                            : "border-dashed text-muted-foreground",
+                        )}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <UserRound className="h-3 w-3 shrink-0" />
+                          {assignedMember
+                            ? assignedMember.user_id === user?.id
+                              ? "Você"
+                              : teamLabel(assignedMember)
+                            : "Sem dono"}
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Sem dono (volta para a fila)</SelectItem>
+                        {team.map((m) => (
+                          <SelectItem key={m.user_id} value={m.user_id}>
+                            {m.user_id === user?.id ? `Você · ${teamLabel(m)}` : teamLabel(m)}
                           </SelectItem>
                         ))}
                       </SelectContent>
