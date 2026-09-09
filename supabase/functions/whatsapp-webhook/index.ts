@@ -1729,7 +1729,16 @@ Deno.serve(async (req: Request) => {
         return json({ ok: true, ignored: "sessão desconhecida" });
       }
 
-      const value = owa.normalizeWebhook(payload);
+      // O WhatsApp entrega o chat como @lid, que não é telefone. Traduzir aqui
+      // (uma chamada por evento, no endpoint por contato, que é rápido) é o que
+      // faz o contato nascer com o número certo — e é o número certo que a IA
+      // usa para responder.
+      const jid = owa.counterpartJid(payload);
+      const resolved = jid?.endsWith("@lid") && config.instance_id
+        ? await owa.resolveLid(owaTarget(config), config.instance_id, jid)
+        : {};
+
+      const value = owa.normalizeWebhook(payload, resolved);
       if (value.messages.length === 0 && value.message_echoes.length === 0) {
         // Pode ser evento de sessão (qr, status) ou uma mensagem num formato que
         // ainda não sabemos ler. O payload cru fica no log: é por ele que o

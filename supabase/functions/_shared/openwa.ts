@@ -227,6 +227,47 @@ export async function sendMedia(
   return { messageId: messageIdOf(data), error: null };
 }
 
+// ── @lid: o identificador que não é telefone ────────────────────────────────
+
+/**
+ * O WhatsApp migrou os chats para @lid — um id opaco que não é o número. O
+ * evento do webhook não traz telefone nenhum: só o lid e a flag isLidSender.
+ * Sem traduzir, o CRM cria contatos chamados "217750614110306" e a IA responde
+ * para um número que não existe (o lead nunca recebe nada).
+ *
+ * Este endpoint por contato resolve, e é rápido — ao contrário de /contacts sem
+ * filtro, que enumera a agenda inteira e estoura o tempo.
+ */
+export async function resolveLid(
+  target: OpenwaTarget,
+  sessionId: string,
+  jid: string,
+): Promise<{ phone: string | null; name: string | null }> {
+  const { data, error } = await call<{ id?: string; name?: string; pushName?: string }>(
+    target,
+    `/sessions/${sessionId}/contacts/${encodeURIComponent(jid)}`,
+  );
+  if (error || !data) return { phone: null, name: null };
+
+  // `id` vem como 5599XXXXXXXX@c.us; `number` é o próprio lid, não serve.
+  const phone = jidToPhone(data.id);
+  const name = data.name?.trim() || data.pushName?.trim() || null;
+  return { phone, name };
+}
+
+/** O JID do outro lado da conversa (o lead), seja ele @lid ou @c.us. */
+export function counterpartJid(payload: Record<string, any>): string | null {
+  const m = findMessage(payload);
+  if (!m) return null;
+  const fromMe = pick(m, ["fromMe", "key.fromMe"]) === true ||
+    String(payload?.event ?? "") === "message.sent";
+  const raw = fromMe
+    ? pick(m, ["to", "chatId", "key.remoteJid"])
+    : pick(m, ["from", "chatId", "key.remoteJid"]);
+  const jid = String(raw ?? "");
+  return jid.includes("@") ? jid : null;
+}
+
 // ── Webhook -> formato da Meta ──────────────────────────────────────────────
 
 export type NormalizedValue = {
@@ -297,7 +338,11 @@ const MEDIA_LABEL: Record<string, string> = {
  * sessão conectada. O atendente vê que chegou mídia e abre no celular; texto,
  * que é o que a IA lê e responde, funciona inteiro.
  */
-export function normalizeWebhook(payload: Record<string, any>): NormalizedValue {
+export function normalizeWebhook(
+  payload: Record<string, any>,
+  /** Telefone e nome resolvidos a partir do @lid, quando foi preciso traduzir. */
+  override: { phone?: string | null; name?: string | null } = {},
+): NormalizedValue {
   const value: NormalizedValue = { messages: [], message_echoes: [], statuses: [], contacts: [] };
 
   const event = String(payload?.event ?? payload?.type ?? "");
@@ -315,7 +360,9 @@ export function normalizeWebhook(payload: Record<string, any>): NormalizedValue 
   const counterpart = fromMe
     ? pick(m, ["to", "chatId", "key.remoteJid"])
     : pick(m, ["from", "author", "chatId", "key.remoteJid"]);
-  const phone = jidToPhone(counterpart) ?? jidToPhone(chat);
+  // O lid resolvido manda: extrair dígitos de um @lid produz um "telefone" que
+  // não existe, e é para ele que a IA tentaria responder.
+  const phone = override.phone ?? (jidToPhone(counterpart) ?? jidToPhone(chat));
   if (!phone) return value;
 
   const id = String(pick(m, ["id._serialized", "id", "messageId", "key.id"]) ?? "");
@@ -340,7 +387,8 @@ export function normalizeWebhook(payload: Record<string, any>): NormalizedValue 
     value.message_echoes.push({ ...msg, to: phone });
   } else {
     value.messages.push({ ...msg, from: phone });
-    const nome = pick(m, ["notifyName", "pushName", "senderName", "sender.pushname", "_data.notifyName"]);
+    const nome = override.name ??
+      pick(m, ["notifyName", "pushName", "senderName", "sender.pushname", "_data.notifyName"]);
     if (nome) value.contacts.push({ wa_id: phone, profile: { name: String(nome) } });
   }
 
