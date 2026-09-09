@@ -33,6 +33,30 @@ type InstanceState = "open" | "connecting" | "close" | "none" | "unknown";
 /** 20 renovações de 30s ≈ 10 minutos de janela para escanear. */
 const MAX_QR_ROUNDS = 20;
 
+/**
+ * A mensagem de erro que a function devolveu, e não "non-2xx status code".
+ *
+ * O supabase-js resume qualquer resposta de erro nessa frase e esconde o corpo
+ * dentro de error.context. Sem abrir isso, um 400 com "o provedor recusou o
+ * webhook" chega na tela como se fosse falha genérica de rede — e a pessoa não
+ * tem o que fazer com isso.
+ */
+async function functionErrorMessage(error: unknown, data: unknown): Promise<string> {
+  const inline = (data as { error?: string } | null)?.error;
+  if (inline) return inline;
+
+  const context = (error as { context?: Response } | null)?.context;
+  if (context && typeof context.clone === "function") {
+    try {
+      const body = await context.clone().json();
+      if (body?.error) return String(body.error);
+    } catch {
+      /* corpo vazio ou não-JSON: fica a mensagem genérica */
+    }
+  }
+  return error instanceof Error ? error.message : "Erro desconhecido";
+}
+
 const PROVIDER_LABEL: Record<string, string> = {
   evolution: "Evolution",
   uazapi: "UAZAPI",
@@ -94,7 +118,7 @@ export default function Settings() {
         `whatsapp-instance?action=${action}`,
         { body: { company_id: company?.id, provider } },
       );
-      if (error || data?.error) throw new Error(data?.error || error?.message);
+      if (error || data?.error) throw new Error(await functionErrorMessage(error, data));
       return data as { connected?: boolean; state?: InstanceState; qr?: string | null };
     },
     [company?.id, provider],
