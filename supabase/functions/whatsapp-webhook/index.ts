@@ -69,6 +69,8 @@ type WhatsappConfig = {
   api_base_url: string;
   provider: string;
   instance_name: string | null;
+  /** uuid da sessão no OpenWA — é por ele que a API do painel é chamada. */
+  instance_id: string | null;
   instance_token: string | null;
 };
 
@@ -87,6 +89,17 @@ function evoTarget(config: WhatsappConfig): evo.EvolutionTarget {
 
 function uazTarget(config: WhatsappConfig): uaz.UazapiTarget {
   return { base: config.api_base_url, token: config.instance_token ?? "" };
+}
+
+/**
+ * O painel do OpenWA é um só para todas as empresas: base e chave vêm dos
+ * secrets, e o que distingue a empresa é a sessão (instance_id).
+ */
+function owaTarget(config: WhatsappConfig): owa.OpenwaTarget {
+  return {
+    base: config.api_base_url || Deno.env.get("OPENWA_BASE_URL")?.trim() || "",
+    apiKey: Deno.env.get("OPENWA_API_KEY")?.trim() ?? "",
+  };
 }
 
 type AiConfig = {
@@ -499,6 +512,24 @@ async function findOrCreateContact(
 }
 
 async function sendWhatsappText(config: WhatsappConfig, phone: string, text: string): Promise<string | null> {
+  // Sem este ramo o openwa caía no caminho da Meta lá embaixo e a IA lia a
+  // mensagem do lead mas não conseguia responder — falha silenciosa, porque o
+  // erro fica no log da function e o lead só vê o vácuo.
+  if (config.provider === "openwa") {
+    if (!config.instance_id) {
+      console.error("sendWhatsappText (openwa): config sem instance_id");
+      return null;
+    }
+    const { messageId, error } = await owa.sendText(
+      owaTarget(config),
+      config.instance_id,
+      phone,
+      text,
+    );
+    if (error) console.error("sendWhatsappText (openwa) falhou", error);
+    return messageId;
+  }
+
   if (config.provider === "uazapi") {
     const { messageId, error } = await uaz.sendText(uazTarget(config), phone, text);
     if (error) console.error("sendWhatsappText (uazapi) falhou", error);
@@ -588,6 +619,21 @@ async function sendWhatsappMedia(
   item: LibraryFile,
   caption: string,
 ): Promise<string | null> {
+  if (config.provider === "openwa") {
+    if (!config.instance_id) {
+      console.error("sendWhatsappMedia (openwa): config sem instance_id");
+      return null;
+    }
+    const { messageId, error } = await owa.sendMedia(owaTarget(config), config.instance_id, phone, {
+      url: item.file_url,
+      type: item.media_type,
+      caption,
+      fileName: item.title,
+    });
+    if (error) console.error("sendWhatsappMedia (openwa) falhou", error);
+    return messageId;
+  }
+
   if (config.provider === "uazapi") {
     const { messageId, error } = await uaz.sendMedia(uazTarget(config), phone, {
       url: item.file_url,
