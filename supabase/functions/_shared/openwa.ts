@@ -49,14 +49,14 @@ function normalizeBase(raw: string): string {
 async function call<T>(
   target: OpenwaTarget,
   path: string,
-  init: { method?: string; body?: unknown } = {},
+  init: { method?: string; body?: unknown; timeout?: number } = {},
 ): Promise<{ ok: boolean; status: number; data: T | null; error: string | null }> {
   try {
     const res = await fetch(`${normalizeBase(target.base)}/api${path}`, {
       method: init.method ?? "GET",
       headers: { "Content-Type": "application/json", "x-api-key": target.apiKey },
       ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-      signal: AbortSignal.timeout(TIMEOUT),
+      signal: AbortSignal.timeout(init.timeout ?? TIMEOUT),
     });
     const data = await res.json().catch(() => null) as T | null;
 
@@ -96,8 +96,17 @@ export async function createSession(target: OpenwaTarget, name: string) {
   return { session: data, error };
 }
 
+/**
+ * Timeout maior que o dos outros: com o engine whatsapp-web.js, iniciar uma
+ * sessão sobe um Chromium e passa dos 30s. Medido contra a v0.23.3 — com os
+ * 20s padrão a chamada estourava aqui enquanto o painel continuava subindo, e o
+ * QR aparecia certinho meio minuto depois.
+ */
 export async function startSession(target: OpenwaTarget, sessionId: string) {
-  const { ok, error } = await call(target, `/sessions/${sessionId}/start`, { method: "POST" });
+  const { ok, error } = await call(target, `/sessions/${sessionId}/start`, {
+    method: "POST",
+    timeout: 60_000,
+  });
   return { ok, error };
 }
 

@@ -164,12 +164,23 @@ Deno.serve(async (req: Request) => {
           return json({ connected: true, state, instance: sessionName });
         }
 
-        const { qr, error: qrError } = await owa.getQr(target, sessionId);
-        if (!qr) {
-          // Sessão recém-criada leva alguns segundos para gerar o código; o
-          // front repete a chamada a cada 30s.
-          return json({ connected: false, state, qr: null, error: qrError });
+        // O QR não nasce junto com a sessão: depois do start o painel ainda
+        // responde "QR code is not ready yet" por alguns segundos. Sem esperar,
+        // o primeiro clique em Conectar sempre voltava sem código e o cliente
+        // tinha que clicar de novo sem entender por quê.
+        let qr: string | null = null;
+        let qrError: string | null = null;
+        for (let round = 0; round < 6; round += 1) {
+          const res = await owa.getQr(target, sessionId);
+          if (res.qr) {
+            qr = res.qr;
+            break;
+          }
+          qrError = res.error;
+          await new Promise((resolve) => setTimeout(resolve, 3000));
         }
+
+        if (!qr) return json({ connected: false, state, qr: null, error: qrError });
         return json({ connected: false, state, qr, instance: sessionName });
       }
 
