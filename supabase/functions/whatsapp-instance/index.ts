@@ -97,6 +97,11 @@ Deno.serve(async (req: Request) => {
       if (action === "status") {
         if (!linked?.instance_id) return json({ connected: false, state: "none" });
         const { session, error } = await owa.getSession(target, linked.instance_id);
+        // Sessão sumiu do painel: para quem olha a tela isso é "não tem número
+        // conectado", não uma falha de consulta.
+        if (!session && error?.includes("not found")) {
+          return json({ connected: false, state: "none" });
+        }
         if (error) return json({ connected: false, state: "unknown", error }, 200);
         const state = owa.mapStatus(session?.status);
         return json({ connected: state === "open", state, instance: session?.name });
@@ -115,6 +120,15 @@ Deno.serve(async (req: Request) => {
         // sessão nova a cada clique se a linha do CRM tiver sido perdida.
         const sessionName = `crm-${companyId}`;
         let sessionId = linked?.instance_id ?? null;
+
+        // O id guardado pode ter morrido do outro lado: o painel roda em cima de
+        // arquivo local, e um redeploy sem volume leva junto sessões, webhooks e
+        // chaves. Sem conferir, todo o resto do fluxo bate em 404 num id
+        // fantasma — e a tela culpa o webhook por um problema da sessão.
+        if (sessionId) {
+          const { session } = await owa.getSession(target, sessionId);
+          if (!session?.id) sessionId = null;
+        }
 
         if (!sessionId) {
           const { sessions } = await owa.listSessions(target);
