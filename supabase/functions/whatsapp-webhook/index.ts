@@ -12,6 +12,7 @@ import {
 } from "../_shared/date.ts";
 import * as evo from "../_shared/evolution.ts";
 import * as uaz from "../_shared/uazapi.ts";
+import * as owa from "../_shared/openwa.ts";
 
 // Cliente com service role. Sem os genéricos explícitos o ReturnType resolve
 // para os defaults (never) e não aceita o cliente real.
@@ -74,7 +75,7 @@ type WhatsappConfig = {
 /** Colunas que todo lookup de config precisa trazer. Literal única de
  *  propósito: o supabase-js infere o tipo da linha a partir da string, e
  *  concatenar com `+` derruba a inferência para GenericStringError. */
-const CONFIG_COLUMNS = "id, user_id, company_id, phone_number_id, access_token, api_base_url, provider, instance_name, instance_token";
+const CONFIG_COLUMNS = "id, user_id, company_id, phone_number_id, access_token, api_base_url, provider, instance_name, instance_id, instance_token";
 
 function evoTarget(config: WhatsappConfig): evo.EvolutionTarget {
   return {
@@ -1661,6 +1662,40 @@ Deno.serve(async (req: Request) => {
       }
 
       await processChange(supabase, supabaseUrl, "uazapi", value, config);
+      return json({ ok: true });
+    }
+
+    // OpenWA: mesma ideia da UAZAPI — a sessão se identifica pela query
+    // (?openwa=<token>), gravada na URL do webhook quando ele é criado. O corpo
+    // do evento não traz nada confiável para rotear: o nome da sessão se repete
+    // entre painéis e o id muda se ela for recriada.
+    const openwaToken = new URL(req.url).searchParams.get("openwa");
+    if (openwaToken) {
+      const { data: configRaw } = await supabase
+        .from("whatsapp_configs")
+        .select(CONFIG_COLUMNS)
+        .eq("instance_token", openwaToken)
+        .eq("active", true)
+        .maybeSingle();
+      const config = configRaw as WhatsappConfig | null;
+      if (!config) {
+        console.log("webhook(openwa): sessão desconhecida");
+        return json({ ok: true, ignored: "sessão desconhecida" });
+      }
+
+      const value = owa.normalizeWebhook(payload);
+      if (value.messages.length === 0 && value.message_echoes.length === 0) {
+        // Pode ser evento de sessão (qr, status) ou uma mensagem num formato que
+        // ainda não sabemos ler. O payload cru fica no log: é por ele que o
+        // normalizeWebhook ganha o caminho que faltava.
+        console.log(
+          "webhook(openwa): sem mensagem no evento",
+          JSON.stringify(payload).slice(0, 1500),
+        );
+        return json({ ok: true, ignored: "sem mensagem" });
+      }
+
+      await processChange(supabase, supabaseUrl, "openwa", value, config);
       return json({ ok: true });
     }
 

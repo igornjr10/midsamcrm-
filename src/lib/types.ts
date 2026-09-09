@@ -138,7 +138,7 @@ export interface GoogleCalendarSyncResult {
   error?: string | null;
 }
 
-export type WhatsappProvider = "meta" | "evolution" | "uazapi";
+export type WhatsappProvider = "meta" | "evolution" | "uazapi" | "openwa";
 
 export interface WhatsappConfig {
   id: string;

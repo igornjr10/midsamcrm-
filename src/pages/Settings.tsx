@@ -33,6 +33,12 @@ type InstanceState = "open" | "connecting" | "close" | "none" | "unknown";
 /** 20 renovações de 30s ≈ 10 minutos de janela para escanear. */
 const MAX_QR_ROUNDS = 20;
 
+const PROVIDER_LABEL: Record<string, string> = {
+  evolution: "Evolution",
+  uazapi: "UAZAPI",
+  openwa: "OpenWA",
+};
+
 const STATE_LABEL: Record<InstanceState, string> = {
   open: "Conectado",
   connecting: "Aguardando leitura do QR",
@@ -414,6 +420,7 @@ export default function Settings() {
             {([
               ["evolution", "QR code · Evolution", "Servidor próprio"],
               ["uazapi", "QR code · UAZAPI", "Serviço hospedado"],
+              ["openwa", "QR code · OpenWA", "Painel próprio"],
               ["meta", "Cloud API · Datafy", "Credenciais da Meta"],
             ] as const).map(([value, title, hint]) => (
               <button
@@ -435,7 +442,9 @@ export default function Settings() {
             <p className="mt-3 rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
               Esta empresa está usando{" "}
               <span className="font-medium text-foreground">
-                {config.provider === "meta" ? "Cloud API" : `QR code · ${config.provider === "uazapi" ? "UAZAPI" : "Evolution"}`}
+                {config.provider === "meta"
+                  ? "Cloud API"
+                  : `QR code · ${PROVIDER_LABEL[config.provider] ?? config.provider}`}
               </span>
               . A troca só vale depois de conectar/salvar abaixo, e o histórico de conversas continua o mesmo.
             </p>

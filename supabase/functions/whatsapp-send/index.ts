@@ -15,6 +15,7 @@ import { normalizePhone } from "../_shared/phone.ts";
 import { resolveCompanyId } from "../_shared/company.ts";
 import * as evo from "../_shared/evolution.ts";
 import * as uaz from "../_shared/uazapi.ts";
+import * as owa from "../_shared/openwa.ts";
 import {
   buildTemplatePayload,
   renderTemplateText,
@@ -73,7 +74,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: config } = await supabaseAdmin
       .from("whatsapp_configs")
-      .select("id, company_id, phone_number_id, waba_id, access_token, api_base_url, active, provider, instance_name, instance_token")
+      .select("id, company_id, phone_number_id, waba_id, access_token, api_base_url, active, provider, instance_name, instance_id, instance_token")
       .eq("company_id", companyId)
       .maybeSingle();
 
@@ -100,6 +101,69 @@ Deno.serve(async (req: Request) => {
         metadata: { ...metadata, deliveryStatus: "sent" },
       });
     };
+
+    if (config.provider === "openwa") {
+      // A chave do painel abre todas as sessões de todas as empresas: fica em
+      // secret da function, nunca em whatsapp_configs.
+      const apiKey = Deno.env.get("OPENWA_API_KEY")?.trim();
+      const base = config.api_base_url || Deno.env.get("OPENWA_BASE_URL")?.trim();
+      if (!apiKey || !base) {
+        return json({ error: "OpenWA não configurado nos secrets da function." }, 500);
+      }
+      const target: owa.OpenwaTarget = { base, apiKey };
+      // instance_id é o uuid da sessão no painel — é por ele que a API chama.
+      const sessionId = config.instance_id as string | null;
+      if (!sessionId) return json({ error: "Sessão do OpenWA não vinculada." }, 400);
+
+      if (action === "get-status") {
+        const { session, error } = await owa.getSession(target, sessionId);
+        if (error) return json({ error }, 502);
+        const state = owa.mapStatus(session?.status);
+        return json({ state, connected: state === "open", instance: session?.name ?? config.instance_name });
+      }
+
+      // Template é conceito da Meta; no OpenWA tudo é texto livre.
+      if (action === "list-templates") return json({ templates: [] });
+      if (action === "send-template") {
+        return json({ error: "Templates não existem no OpenWA — envie como texto." }, 400);
+      }
+      if (action === "sync-history") {
+        return json({ error: "Importação de histórico só existe na Cloud API." }, 400);
+      }
+
+      const phone = body.phone as string | undefined;
+      const contactId = body.contact_id as string | undefined;
+      if (!phone) return json({ error: "phone é obrigatório" }, 400);
+
+      if (action === "send-text") {
+        const text = (body.text as string | undefined)?.trim();
+        if (!text) return json({ error: "text é obrigatório" }, 400);
+        const { messageId, error } = await owa.sendText(target, sessionId, normalizePhone(phone), text);
+        if (error) return json({ success: false, error }, 200);
+        await recordSent(contactId, messageId, text, {});
+        return json({ success: true, message_id: messageId });
+      }
+
+      if (action === "send-media") {
+        const mediaUrl = body.mediaUrl as string | undefined;
+        if (!mediaUrl) return json({ error: "mediaUrl é obrigatório" }, 400);
+        const mediaType = (body.mediaType as string | undefined) ?? "document";
+        const caption = (body.caption as string | undefined) ?? "";
+
+        const { messageId, error } = await owa.sendMedia(target, sessionId, normalizePhone(phone), {
+          url: mediaUrl,
+          type: mediaType,
+          caption,
+        });
+        if (error) return json({ success: false, error }, 200);
+        await recordSent(contactId, messageId, caption || `[${mediaType}]`, {
+          mediaUrl, mediaType, mimetype: body.mimetype ?? null,
+        });
+        return json({ success: true, message_id: messageId });
+      }
+
+      return json({ error: `Ação desconhecida: ${action}` }, 400);
+    }
 
     if (config.provider === "uazapi") {
       const target: uaz.UazapiTarget = {

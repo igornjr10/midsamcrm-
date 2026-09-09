@@ -19,6 +19,7 @@ import {
 } from "../_shared/whatsapp-template.ts";
 import * as evo from "../_shared/evolution.ts";
 import * as uaz from "../_shared/uazapi.ts";
+import * as owa from "../_shared/openwa.ts";
 
 /** Mesma convenção do follow-up de texto (sdr-followup/renderMessage). */
 function renderPlaceholders(template: string, contactName: string | null): string {
@@ -107,7 +108,8 @@ Deno.serve(async (req: Request) => {
         .eq("company_id", companyId)
         .maybeSingle();
       const createProvider = (providerRow as { provider?: string } | null)?.provider;
-      const isEvolution = createProvider === "evolution" || createProvider === "uazapi";
+      const isEvolution =
+        createProvider === "evolution" || createProvider === "uazapi" || createProvider === "openwa";
 
       if (isEvolution) {
         if (!(body.template_body as string | undefined)?.trim()) {
@@ -204,16 +206,22 @@ Deno.serve(async (req: Request) => {
 
     const { data: config } = await supabase
       .from("whatsapp_configs")
-      .select("phone_number_id, access_token, api_base_url, active, provider, instance_name, instance_token")
+      .select("phone_number_id, access_token, api_base_url, active, provider, instance_name, instance_id, instance_token")
       .eq("company_id", companyId)
       .maybeSingle();
     if (!config?.active) {
       return json({ error: "WhatsApp não configurado ou desativado." }, 400);
     }
-    // Os dois provedores de instância mandam texto livre; só a Meta tem template.
+    // Os provedores de instância mandam texto livre; só a Meta tem template.
     const isEvolution = config.provider === "evolution";
     const isUazapi = config.provider === "uazapi";
-    const freeText = isEvolution || isUazapi;
+    const isOpenwa = config.provider === "openwa";
+    const freeText = isEvolution || isUazapi || isOpenwa;
+    const owaTarget: owa.OpenwaTarget = {
+      base: (config.api_base_url as string) || Deno.env.get("OPENWA_BASE_URL")?.trim() || "",
+      apiKey: Deno.env.get("OPENWA_API_KEY")?.trim() ?? "",
+    };
+    const owaSessionId = (config.instance_id as string) ?? "";
     const evoTarget: evo.EvolutionTarget = {
       base: config.api_base_url as string,
       apikey: (config.instance_token as string) ?? "",
@@ -276,9 +284,11 @@ Deno.serve(async (req: Request) => {
         let wamid: string | null;
 
         if (freeText) {
-          const { messageId, error } = isUazapi
-            ? await uaz.sendText(uazTarget, target.phone, renderedText)
-            : await evo.sendText(evoTarget, target.phone, renderedText);
+          const { messageId, error } = isOpenwa
+            ? await owa.sendText(owaTarget, owaSessionId, target.phone, renderedText)
+            : isUazapi
+              ? await uaz.sendText(uazTarget, target.phone, renderedText)
+              : await evo.sendText(evoTarget, target.phone, renderedText);
           if (error) throw new Error(error);
           wamid = messageId;
         } else {
