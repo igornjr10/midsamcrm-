@@ -14,7 +14,9 @@
 //   POST /api/sessions/{id}/messages/send-text  {chatId,text}
 //   POST /api/sessions/{id}/messages/send-image|video|document|audio
 //                                               {chatId,url|base64+mimetype,caption|filename}
-//   GET/POST /api/sessions/{id}/webhooks        {url,events,active,...}
+//   GET/POST /api/sessions/{id}/webhooks        {url,events}
+//     (o POST devolve 400 se levar `active` ou `sessionId` no corpo: o DTO de
+//      criação não aceita campo fora da lista dele, e o erro não diz qual)
 //
 // O que NÃO foi possível levantar por sondagem: o corpo exato do evento
 // message.received — o painel só entrega chats e mensagens com a sessão
@@ -146,9 +148,12 @@ export async function createWebhook(
   url: string,
   events: string[] = ["message.received", "message.sent"],
 ) {
+  // Só url e events. O DTO de criação recusa campo fora da lista dele com um
+  // "Bad Request" seco, sem dizer qual — e tanto `active` quanto `sessionId`
+  // (que já está na rota) caem nessa. Levantado por eliminação contra a API.
   const { data, error } = await call<OpenwaWebhook>(target, `/sessions/${sessionId}/webhooks`, {
     method: "POST",
-    body: { url, events, active: true },
+    body: { url, events },
   });
   return { webhook: data, error };
 }
