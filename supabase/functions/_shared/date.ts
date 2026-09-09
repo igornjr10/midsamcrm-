@@ -29,6 +29,35 @@ export function localISO(timezone: string, date: Date): string {
   return parts; // en-CA já formata como YYYY-MM-DD
 }
 
+/**
+ * Hora (0-23) e dia da semana (0 = domingo) no fuso da empresa.
+ *
+ * O servidor roda em UTC: às 22h de Brasília já é o dia seguinte lá, e uma
+ * janela de atendimento calculada no relógio do servidor fecharia duas horas
+ * cedo — e no dia errado, perto da meia-noite.
+ */
+export function localClock(
+  timezone: string,
+  now = new Date(),
+): { hour: number; weekday: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour12: false,
+    hour: "2-digit",
+    weekday: "short",
+  }).formatToParts(now);
+
+  const hourPart = parts.find((p) => p.type === "hour")?.value ?? "0";
+  const weekdayPart = parts.find((p) => p.type === "weekday")?.value ?? "Sun";
+  const dias = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  // % 24 porque em algumas versões do ICU a meia-noite sai como "24".
+  return {
+    hour: Number(hourPart) % 24,
+    weekday: Math.max(0, dias.indexOf(weekdayPart)),
+  };
+}
+
 export type DateInfo = {
   data: string;
   dia_semana: string;

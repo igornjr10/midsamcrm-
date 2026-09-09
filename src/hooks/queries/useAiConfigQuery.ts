@@ -38,6 +38,13 @@ export interface SaveAiConfigInput {
   followup_window_end?: number;
   followup_skip_weekends?: boolean;
   followup_only_open_stages?: boolean;
+  // Horário de atendimento da IA — outra coisa que a janela do follow-up: esta
+  // vale para a resposta a quem acabou de escrever.
+  reply_window_enabled?: boolean;
+  reply_window_start?: number;
+  reply_window_end?: number;
+  reply_skip_weekends?: boolean;
+  reply_offhours_message?: string | null;
 }
 
 export function useSaveAiConfigMutation() {

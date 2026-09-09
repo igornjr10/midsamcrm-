@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  CalendarDays, Copy, CheckCircle, Loader2, History, QrCode, RefreshCw,
-  Settings as SettingsIcon, Unplug,
+  Bell, BellOff, CalendarDays, Copy, CheckCircle, Loader2, History, QrCode, RefreshCw,
+  Settings as SettingsIcon, Unplug, Volume2, VolumeX,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -12,6 +12,7 @@ import {
   useWhatsappConfigQuery, useSaveWhatsappConfigMutation, whatsappConfigQueryKey,
   useGoogleCalendarQuery, useGoogleCalendarConnectMutation,
   useGoogleCalendarDisconnectMutation, useGoogleCalendarSyncMutation, googleCalendarQueryKey,
+  isAlertSoundEnabled, setAlertSoundEnabled, notificationPermission, requestNotificationPermission,
 } from "@/hooks/queries";
 import type { WhatsappProvider } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,12 @@ type InstanceState = "open" | "connecting" | "close" | "none" | "unknown";
 
 /** 20 renovações de 30s ≈ 10 minutos de janela para escanear. */
 const MAX_QR_ROUNDS = 20;
+
+const PROVIDER_LABEL: Record<string, string> = {
+  evolution: "Evolution",
+  uazapi: "UAZAPI",
+  openwa: "OpenWA",
+};
 
 const STATE_LABEL: Record<InstanceState, string> = {
   open: "Conectado",
@@ -308,6 +315,21 @@ export default function Settings() {
     }
   };
 
+  // ── Avisos de mensagem nova ───────────────────────────────────────────────
+  // Preferência do navegador, não da empresa: o som é de quem está sentado na
+  // frente da tela, e a permissão de notificação é dada por dispositivo.
+  const [soundOn, setSoundOn] = useState(isAlertSoundEnabled);
+  const [permission, setPermission] = useState(notificationPermission);
+
+  const askNotifications = async () => {
+    const result = await requestNotificationPermission();
+    setPermission(result);
+    if (result === "granted") toast.success("Notificações ativadas neste navegador.");
+    else if (result === "denied") {
+      toast.error("O navegador bloqueou. Libere nas permissões do site e tente de novo.");
+    }
+  };
+
   const copyToClipboard = (value: string) => {
     void navigator.clipboard.writeText(value);
     toast.success("Copiado!");
@@ -398,6 +420,7 @@ export default function Settings() {
             {([
               ["evolution", "QR code · Evolution", "Servidor próprio"],
               ["uazapi", "QR code · UAZAPI", "Serviço hospedado"],
+              ["openwa", "QR code · OpenWA", "Painel próprio"],
               ["meta", "Cloud API · Datafy", "Credenciais da Meta"],
             ] as const).map(([value, title, hint]) => (
               <button
@@ -419,7 +442,9 @@ export default function Settings() {
             <p className="mt-3 rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
               Esta empresa está usando{" "}
               <span className="font-medium text-foreground">
-                {config.provider === "meta" ? "Cloud API" : `QR code · ${config.provider === "uazapi" ? "UAZAPI" : "Evolution"}`}
+                {config.provider === "meta"
+                  ? "Cloud API"
+                  : `QR code · ${PROVIDER_LABEL[config.provider] ?? config.provider}`}
               </span>
               . A troca só vale depois de conectar/salvar abaixo, e o histórico de conversas continua o mesmo.
             </p>
@@ -645,6 +670,60 @@ export default function Settings() {
       </Card>
       </>
       )}
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="flex flex-wrap items-center gap-2">
+            <Bell className="h-4 w-4 text-muted-foreground" />
+            Avisos de mensagem nova
+          </CardTitle>
+          <CardDescription>
+            Quando um cliente manda mensagem, o CRM toca um bip e conta as conversas novas no título
+            da aba — em qualquer tela, não só no Chat. A notificação do navegador aparece mesmo com a
+            aba em segundo plano.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                const next = !soundOn;
+                setAlertSoundEnabled(next);
+                setSoundOn(next);
+              }}
+            >
+              {soundOn ? <Volume2 /> : <VolumeX />}
+              {soundOn ? "Som ligado" : "Som desligado"}
+            </Button>
+
+            {permission === "granted" ? (
+              <Button variant="outline" disabled>
+                <CheckCircle />
+                Notificações ativadas
+              </Button>
+            ) : permission === "unsupported" ? (
+              <Button variant="outline" disabled>
+                <BellOff />
+                Sem suporte neste navegador
+              </Button>
+            ) : (
+              <Button variant="outline" onClick={() => void askNotifications()}>
+                <Bell />
+                Ativar notificações
+              </Button>
+            )}
+          </div>
+
+          {permission === "denied" && (
+            <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
+              O navegador está bloqueando as notificações deste site. No Chrome: cadeado ao lado do
+              endereço → Notificações → Permitir. O som e o contador no título continuam funcionando
+              mesmo bloqueado.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="mt-6">
         <CardHeader>

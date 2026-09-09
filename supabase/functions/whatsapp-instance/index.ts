@@ -15,6 +15,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { resolveCompanyId } from "../_shared/company.ts";
 import * as evo from "../_shared/evolution.ts";
 import * as uaz from "../_shared/uazapi.ts";
+import * as owa from "../_shared/openwa.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -79,6 +80,102 @@ Deno.serve(async (req: Request) => {
     // Provedor pedido pelo front (ao conectar pela primeira vez) ou o que a
     // empresa já usa.
     const provider = (body.provider as string | undefined)?.trim() || config?.provider || "evolution";
+
+    // ── OpenWA ────────────────────────────────────────────────────────────────
+    // Painel com uma chave só e várias sessões dentro: a empresa não cria
+    // servidor, cria sessão. Por isso ele sai antes do caminho comum, que
+    // assume uma instância por servidor.
+    if (provider === "openwa") {
+      const base = Deno.env.get("OPENWA_BASE_URL")?.trim();
+      const apiKey = Deno.env.get("OPENWA_API_KEY")?.trim();
+      if (!base || !apiKey) {
+        return json({ error: "OpenWA não configurado nos secrets da function." }, 500);
+      }
+      const target: owa.OpenwaTarget = { base, apiKey };
+      const linked = config?.provider === "openwa" ? config : null;
+
+      if (action === "status") {
+        if (!linked?.instance_id) return json({ connected: false, state: "none" });
+        const { session, error } = await owa.getSession(target, linked.instance_id);
+        if (error) return json({ connected: false, state: "unknown", error }, 200);
+        const state = owa.mapStatus(session?.status);
+        return json({ connected: state === "open", state, instance: session?.name });
+      }
+
+      if (action === "disconnect") {
+        if (!linked?.instance_id) return json({ error: "Nenhuma sessão conectada." }, 400);
+        const { ok, error } = await owa.logoutSession(target, linked.instance_id);
+        if (!ok) return json({ error: error ?? "Falha ao desconectar" }, 502);
+        return json({ ok: true });
+      }
+
+      if (action === "connect") {
+        // Sessão da empresa: a que já está vinculada, ou uma pelo nome
+        // derivado do company_id — reaproveitar pelo nome evita criar uma
+        // sessão nova a cada clique se a linha do CRM tiver sido perdida.
+        const sessionName = `crm-${companyId}`;
+        let sessionId = linked?.instance_id ?? null;
+
+        if (!sessionId) {
+          const { sessions } = await owa.listSessions(target);
+          sessionId = sessions.find((s) => s.name === sessionName)?.id ?? null;
+        }
+        if (!sessionId) {
+          const { session, error } = await owa.createSession(target, sessionName);
+          if (!session?.id) return json({ error: error ?? "Falha ao criar a sessão" }, 502);
+          sessionId = session.id;
+        }
+
+        // Token nosso, só para rotear o webhook: o OpenWA não manda no evento
+        // nada que identifique a empresa com segurança.
+        const routingToken = linked?.instance_token ?? crypto.randomUUID();
+        const hookUrl = `${supabaseUrl}/functions/v1/whatsapp-webhook?openwa=${encodeURIComponent(routingToken)}`;
+
+        // Grava antes de mexer no painel: se o cliente fechar a tela depois de
+        // escanear, a sessão já está vinculada e o webhook acha a rota.
+        const { error: saveError } = await admin
+          .from("whatsapp_configs")
+          .upsert({
+            ...(config?.id ? { id: config.id } : {}),
+            user_id: user.id,
+            company_id: companyId,
+            provider: "openwa",
+            api_base_url: base,
+            instance_name: sessionName,
+            instance_id: sessionId,
+            instance_token: routingToken,
+            active: true,
+          }, { onConflict: "company_id" });
+        if (saveError) return json({ error: saveError.message }, 400);
+
+        // Webhook idempotente: o painel aceita vários com a mesma URL, e a
+        // conversa chegaria duplicada no chat.
+        const { webhooks } = await owa.listWebhooks(target, sessionId);
+        if (!webhooks.some((w) => w.url === hookUrl)) {
+          const { error: hookError } = await owa.createWebhook(target, sessionId, hookUrl);
+          if (hookError) return json({ error: `Falha ao apontar o webhook: ${hookError}` }, 502);
+        }
+
+        await owa.startSession(target, sessionId);
+
+        const { session } = await owa.getSession(target, sessionId);
+        const state = owa.mapStatus(session?.status);
+        if (state === "open") {
+          return json({ connected: true, state, instance: sessionName });
+        }
+
+        const { qr, error: qrError } = await owa.getQr(target, sessionId);
+        if (!qr) {
+          // Sessão recém-criada leva alguns segundos para gerar o código; o
+          // front repete a chamada a cada 30s.
+          return json({ connected: false, state, qr: null, error: qrError });
+        }
+        return json({ connected: false, state, qr, instance: sessionName });
+      }
+
+      return json({ error: `Ação desconhecida: ${action}` }, 400);
+    }
+
     if (provider !== "evolution" && provider !== "uazapi") {
       return json({ error: `Provedor sem conexão por QR: ${provider}` }, 400);
     }

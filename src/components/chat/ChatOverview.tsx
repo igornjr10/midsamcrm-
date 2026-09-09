@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { BadgeCheck, CalendarDays, Clock, HandCoins, MessageSquareReply } from "lucide-react";
+import { BadgeCheck, CalendarDays, Clock, Hand, HandCoins, MessageSquareReply } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useContactsQuery, useAppointmentsQuery } from "@/hooks/queries";
 import { matchesContactFilter, type Appointment, type Contact } from "@/lib/types";
@@ -54,6 +54,16 @@ export default function ChatOverview({ onSelect }: { onSelect: (contactId: strin
     [contacts],
   );
 
+  // O lead pediu uma pessoa e a IA se calou esperando. Vem antes de tudo: é a
+  // única fila em que alguém está parado esperando por gente.
+  const pediramAtendente = useMemo(
+    () =>
+      contacts
+        .filter((c) => !!c.needs_human_at)
+        .sort((a, b) => (a.needs_human_at ?? "").localeCompare(b.needs_human_at ?? "")),
+    [contacts],
+  );
+
   // Mais antigo primeiro: quem espera há mais tempo é o mais urgente.
   const aguardando = useMemo(
     () =>
@@ -72,6 +82,7 @@ export default function ChatOverview({ onSelect }: { onSelect: (contactId: strin
   }, [agenda]);
 
   const tiles = [
+    { label: "Pediram atendente", valor: pediramAtendente.length, icon: Hand, tom: "text-rose-600 dark:text-rose-400" },
     { label: "Pagaram", valor: pagaram.length, icon: BadgeCheck, tom: "text-emerald-600 dark:text-emerald-400" },
     { label: "Sinalizaram", valor: sinalizaram.length, icon: HandCoins, tom: "text-amber-600 dark:text-amber-400" },
     { label: "Aguardando", valor: aguardando.length, icon: MessageSquareReply, tom: "text-sky-600 dark:text-sky-400" },
@@ -81,7 +92,7 @@ export default function ChatOverview({ onSelect }: { onSelect: (contactId: strin
   return (
     <ScrollArea className="flex-1">
       <div className="space-y-5 p-5">
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {tiles.map(({ label, valor, icon: Icon, tom }) => (
             <div key={label} className="rounded-xl border bg-card p-3.5">
               <Icon className={cn("h-4 w-4", tom)} />
@@ -90,6 +101,18 @@ export default function ChatOverview({ onSelect }: { onSelect: (contactId: strin
             </div>
           ))}
         </div>
+
+        {pediramAtendente.length > 0 && (
+          <Secao
+            titulo="Pediram atendente"
+            descricao="A IA chamou você e parou de responder — os mais antigos primeiro"
+            vazio=""
+            itens={pediramAtendente.slice(0, 8)}
+            onSelect={onSelect}
+            tom="rose"
+            modo="humano"
+          />
+        )}
 
         <Secao
           titulo="Pagamento identificado"
@@ -116,7 +139,7 @@ export default function ChatOverview({ onSelect }: { onSelect: (contactId: strin
           itens={aguardando.slice(0, 8)}
           onSelect={onSelect}
           tom="sky"
-          espera
+          modo="espera"
         />
 
         {compromissosHoje.length > 0 && (
@@ -144,7 +167,11 @@ const TONS = {
   emerald: "border-emerald-300 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/40",
   amber: "border-amber-300 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/40",
   sky: "border-sky-300 bg-sky-50/60 dark:border-sky-900 dark:bg-sky-950/40",
+  rose: "border-rose-300 bg-rose-50/60 dark:border-rose-900 dark:bg-rose-950/40",
 } as const;
+
+/** O que a linha mostra como data e como legenda muda com a fila. */
+type Modo = "sinal" | "espera" | "humano";
 
 function Secao({
   titulo,
@@ -153,7 +180,7 @@ function Secao({
   itens,
   onSelect,
   tom,
-  espera,
+  modo = "sinal",
 }: {
   titulo: string;
   descricao: string;
@@ -161,7 +188,7 @@ function Secao({
   itens: Contact[];
   onSelect: (contactId: string) => void;
   tom: keyof typeof TONS;
-  espera?: boolean;
+  modo?: Modo;
 }) {
   return (
     <div>
@@ -172,7 +199,20 @@ function Secao({
         <p className="mt-2 rounded-lg border border-dashed p-3 text-xs text-muted-foreground">{vazio}</p>
       ) : (
         <div className="mt-2 space-y-1.5">
-          {itens.map((c) => (
+          {itens.map((c) => {
+            const quando =
+              modo === "espera" ? c.last_inbound_at
+              : modo === "humano" ? c.needs_human_at
+              : c.closing_signal_at;
+            const legenda =
+              modo === "espera"
+                ? c.phone ?? "sem telefone"
+                : modo === "humano"
+                  ? c.needs_human_reason ?? "Pediu para falar com uma pessoa"
+                  : `${c.closing_signal_label ?? ""}${
+                      c.closing_signal_excerpt ? ` · “${c.closing_signal_excerpt}”` : ""
+                    }`;
+            return (
             <button
               key={c.id}
               onClick={() => onSelect(c.id)}
@@ -188,21 +228,14 @@ function Secao({
                 <span className="flex items-baseline justify-between gap-2">
                   <span className="truncate text-sm font-medium">{c.name}</span>
                   <span className="tabular shrink-0 text-[11px] text-muted-foreground">
-                    {espera
-                      ? c.last_inbound_at && haQuantoTempo(c.last_inbound_at)
-                      : c.closing_signal_at && haQuantoTempo(c.closing_signal_at)}
+                    {quando && haQuantoTempo(quando)}
                   </span>
                 </span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  {espera
-                    ? c.phone ?? "sem telefone"
-                    : `${c.closing_signal_label ?? ""}${
-                        c.closing_signal_excerpt ? ` · “${c.closing_signal_excerpt}”` : ""
-                      }`}
-                </span>
+                <span className="block truncate text-xs text-muted-foreground">{legenda}</span>
               </span>
             </button>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

@@ -5,7 +5,7 @@ import {
   Building2, Megaphone, Moon, Sun, Eye, Menu, X,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { useContactsRealtime } from "@/hooks/queries";
+import { useContactsRealtime, useAtendimentoAlerts, useUnreadContacts } from "@/hooks/queries";
 import { useTheme } from "@/hooks/useTheme";
 import { Logo, LogoMark } from "@/components/layout/Logo";
 import { cn } from "@/lib/utils";
@@ -73,6 +73,10 @@ export default function AppLayout() {
   // Uma assinatura só para o app inteiro: o contato muda sozinho quando o
   // gatilho do banco identifica pagamento e move a etapa.
   useContactsRealtime(company?.id);
+  // Som, título e notificação de mensagem nova valem em qualquer tela — por
+  // isso moram aqui, e não no Chat.
+  useAtendimentoAlerts(company?.id);
+  const { count: unreadCount } = useUnreadContacts(company?.id, user?.id);
 
   const groups = isSuperAdmin ? [...NAV_GROUPS, SUPER_ADMIN_GROUP] : NAV_GROUPS;
 
@@ -154,6 +158,14 @@ export default function AppLayout() {
                           )}
                         />
                         {item.label}
+                        {/* Quantas conversas têm mensagem que este atendente
+                            ainda não viu. Fica no menu porque o aviso precisa
+                            existir mesmo com o Chat fechado. */}
+                        {item.to === "/chat" && unreadCount > 0 && (
+                          <span className="tabular ml-auto min-w-5 rounded-full bg-primary px-1.5 py-0.5 text-center text-[11px] font-semibold leading-none text-primary-foreground">
+                            {unreadCount > 99 ? "99+" : unreadCount}
+                          </span>
+                        )}
                       </>
                     )}
                   </NavLink>
