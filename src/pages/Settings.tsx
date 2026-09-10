@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  Bell, BellOff, CalendarDays, Copy, CheckCircle, Loader2, History, QrCode, RefreshCw,
+  Bell, BellOff, CalendarDays, Copy, CheckCircle, Gauge, Loader2, History, QrCode, RefreshCw,
   Settings as SettingsIcon, Unplug, Volume2, VolumeX,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -13,8 +13,10 @@ import {
   useGoogleCalendarQuery, useGoogleCalendarConnectMutation,
   useGoogleCalendarDisconnectMutation, useGoogleCalendarSyncMutation, googleCalendarQueryKey,
   isAlertSoundEnabled, setAlertSoundEnabled, notificationPermission, requestNotificationPermission,
+  useCompanyUsageQuery,
 } from "@/hooks/queries";
 import type { WhatsappProvider } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -76,6 +78,7 @@ export default function Settings() {
   const { data: config, isPending } = useWhatsappConfigQuery(company?.id);
   const saveConfig = useSaveWhatsappConfigMutation();
   const queryClient = useQueryClient();
+  const { data: usage } = useCompanyUsageQuery(company?.id);
 
   const [phoneNumberId, setPhoneNumberId] = useState("");
   const [wabaId, setWabaId] = useState("");
@@ -693,6 +696,50 @@ export default function Settings() {
         </CardContent>
       </Card>
       </>
+      )}
+
+      {/* Consumo do mês. Só aparece com cota definida: para quem é ilimitado,
+          um número sem teto ao lado não informa nada. */}
+      {usage?.monthly_coins != null && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="flex flex-wrap items-center gap-2">
+              <Gauge className="h-4 w-4 text-muted-foreground" />
+              Envios do mês
+            </CardTitle>
+            <CardDescription>
+              Cada mensagem enviada — pelo Chat, por campanha ou pela IA — consome da cota mensal.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-end justify-between gap-3">
+              <p className="tabular text-2xl font-bold leading-none">
+                {Number(usage.used).toLocaleString("pt-BR")}
+                <span className="text-sm font-normal text-muted-foreground">
+                  {" "}de {usage.monthly_coins.toLocaleString("pt-BR")}
+                </span>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {Number(usage.remaining ?? 0) > 0
+                  ? `${Number(usage.remaining).toLocaleString("pt-BR")} restantes`
+                  : usage.allow_overage
+                    ? "Cota excedida — o excedente entra na próxima fatura"
+                    : "Cota esgotada — os envios estão bloqueados"}
+              </p>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-muted">
+              <div
+                className={cn(
+                  "h-full rounded-full transition-all",
+                  Number(usage.used) >= usage.monthly_coins ? "bg-destructive" : "bg-primary",
+                )}
+                style={{
+                  width: `${Math.min(100, (Number(usage.used) / Math.max(1, usage.monthly_coins)) * 100)}%`,
+                }}
+              />
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       <Card className="mt-6">

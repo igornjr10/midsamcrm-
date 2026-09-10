@@ -21,6 +21,7 @@ import * as evo from "../_shared/evolution.ts";
 import * as uaz from "../_shared/uazapi.ts";
 import * as owa from "../_shared/openwa.ts";
 import { hasFeature, featureDeniedMessage } from "../_shared/features.ts";
+import { consumeCoins } from "../_shared/usage.ts";
 
 /** Mesma convenção do follow-up de texto (sdr-followup/renderMessage). */
 function renderPlaceholders(template: string, contactName: string | null): string {
@@ -289,6 +290,18 @@ Deno.serve(async (req: Request) => {
 
       try {
         let wamid: string | null;
+
+        // Uma cobrança por destinatário, antes do envio. Estourou no meio do
+        // lote, o resto fica pendente: a campanha continua de onde parou quando
+        // a cota renovar, em vez de marcar como falha o que nunca foi tentado.
+        const usage = await consumeCoins(supabase, companyId, "campaign_out", {
+          contactId: target.contact_id,
+          ref: campaignId,
+        });
+        if (!usage.allowed) {
+          console.log("whatsapp-campaign: cota esgotada", companyId);
+          break;
+        }
 
         if (freeText) {
           const { messageId, error } = isOpenwa

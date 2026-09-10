@@ -1,6 +1,11 @@
+import { useEffect, useState } from "react";
 import { Loader2, Lock, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import {
+  useCompanyUsageQuery,
+  useCompanyPlanQuery,
+  useSaveCompanyPlanMutation,
+  useClearCompanyPlanMutation,
   useFeaturesQuery,
   useNichesQuery,
   useCompanyOverridesQuery,
@@ -9,6 +14,7 @@ import {
   useClearCompanyFeatureMutation,
 } from "@/hooks/queries";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +44,45 @@ export default function ModulesDialog({
   const { data: features = [], isPending } = useFeaturesQuery(open ? companyId : undefined);
   const { data: niches = [] } = useNichesQuery(open);
   const { data: overrides } = useCompanyOverridesQuery(companyId, open);
+
+  const { data: usage } = useCompanyUsageQuery(companyId, open);
+  const { data: plan } = useCompanyPlanQuery(companyId, open);
+  const savePlan = useSaveCompanyPlanMutation();
+  const clearPlan = useClearCompanyPlanMutation();
+
+  const [coins, setCoins] = useState("2000");
+  const [overage, setOverage] = useState(false);
+
+  // O formulário espelha o plano gravado; sem plano, fica no padrão sugerido.
+  useEffect(() => {
+    setCoins(String(plan?.monthly_coins ?? 2000));
+    setOverage(plan?.allow_overage ?? false);
+  }, [plan]);
+
+  const handleSavePlan = async () => {
+    if (!companyId) return;
+    const valor = Number(coins);
+    if (!Number.isFinite(valor) || valor < 0) {
+      toast.error("Informe um número de coins válido.");
+      return;
+    }
+    try {
+      await savePlan.mutateAsync({ companyId, monthlyCoins: valor, allowOverage: overage });
+      toast.success("Cota atualizada.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao salvar a cota");
+    }
+  };
+
+  const handleClearPlan = async () => {
+    if (!companyId) return;
+    try {
+      await clearPlan.mutateAsync(companyId);
+      toast.success("Empresa sem teto de envios — o consumo continua medido.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao remover a cota");
+    }
+  };
 
   const setNiche = useSetCompanyNicheMutation();
   const setFeature = useSetCompanyFeatureMutation();
@@ -74,12 +119,13 @@ export default function ModulesDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Módulos · {company?.name}</DialogTitle>
+          <DialogTitle>Plano · {company?.name}</DialogTitle>
           <DialogDescription>
-            O nicho define o pacote. Marcar ou desmarcar aqui cria uma exceção só para esta empresa,
-            que continua valendo mesmo se o pacote do nicho mudar depois.
+            O nicho define o pacote de módulos; marcar ou desmarcar aqui cria uma exceção só para
+            esta empresa, que continua valendo mesmo se o pacote mudar depois. A cota de envios fica
+            no fim.
           </DialogDescription>
         </DialogHeader>
 
@@ -160,6 +206,59 @@ export default function ModulesDialog({
               })}
             </div>
           )}
+
+          {/* ── Cota de envios ─────────────────────────────────────────── */}
+          <div className="space-y-3 rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">Cota mensal de envios</p>
+              <p className="text-xs text-muted-foreground">
+                {usage?.monthly_coins == null
+                  ? "Sem cota definida: ilimitado, e o consumo continua sendo medido."
+                  : `${Number(usage.used).toLocaleString("pt-BR")} de ${usage.monthly_coins.toLocaleString("pt-BR")} coins usados neste mês.`}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="cota">Coins por mês</Label>
+                <Input
+                  id="cota"
+                  type="number"
+                  min={0}
+                  className="w-32"
+                  value={coins}
+                  onChange={(e) => setCoins(e.target.value)}
+                />
+              </div>
+              <Button onClick={() => void handleSavePlan()} disabled={savePlan.isPending}>
+                {savePlan.isPending ? "Salvando..." : "Salvar cota"}
+              </Button>
+              {usage?.monthly_coins != null && (
+                <Button
+                  variant="outline"
+                  onClick={() => void handleClearPlan()}
+                  disabled={clearPlan.isPending}
+                >
+                  Tornar ilimitado
+                </Button>
+              )}
+            </div>
+
+            <label className="flex cursor-pointer items-start gap-2 text-sm">
+              <Checkbox
+                className="mt-0.5"
+                checked={overage}
+                onCheckedChange={(v) => setOverage(v === true)}
+              />
+              <span>
+                Deixar passar do limite
+                <span className="block text-xs text-muted-foreground">
+                  Marcado, o excedente vira cobrança no fim do mês. Desmarcado, o envio é recusado —
+                  inclusive a resposta da IA, que passa a esperar um humano.
+                </span>
+              </span>
+            </label>
+          </div>
 
           <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
             Pipeline, Contatos e Chat não podem ser desligados — são o produto. Esconder um módulo

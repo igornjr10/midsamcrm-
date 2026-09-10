@@ -210,6 +210,24 @@ export interface CompanyFeature {
   enabled: boolean;
 }
 
+/** Cota de envios da empresa. Sem linha = ilimitado (o consumo segue medido). */
+export interface CompanyPlan {
+  company_id: string;
+  monthly_coins: number;
+  /** true = passa do teto e vira pós-pago; false = bloqueia o envio. */
+  allow_overage: boolean;
+}
+
+/** Consumo do mês corrente, já somado pelo banco. */
+export interface CompanyUsage {
+  used: number;
+  /** Null quando a empresa não tem plano definido. */
+  monthly_coins: number | null;
+  allow_overage: boolean;
+  remaining: number | null;
+  period_start: string;
+}
+
 /** Membro da empresa que pode ser responsável por uma conversa. */
 export interface CompanyTeamMember {
   user_id: string;

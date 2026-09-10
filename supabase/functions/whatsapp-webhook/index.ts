@@ -14,6 +14,7 @@ import * as evo from "../_shared/evolution.ts";
 import * as uaz from "../_shared/uazapi.ts";
 import * as owa from "../_shared/openwa.ts";
 import { hasFeature } from "../_shared/features.ts";
+import { consumeCoins } from "../_shared/usage.ts";
 
 // Cliente com service role. Sem os genéricos explícitos o ReturnType resolve
 // para os defaults (never) e não aceita o cliente real.
@@ -896,6 +897,17 @@ async function maybeAiReply(
   // SDR IA é módulo do plano. A checagem vem depois de `enabled` de propósito:
   // empresa com a IA desligada não gasta uma consulta a mais por mensagem.
   if (!(await hasFeature(supabase, config.company_id, "sdr"))) return;
+
+  // Cota do mês. A IA é o consumo que mais escapa: ela responde sozinha, dia e
+  // noite, e quem paga a OpenAI é a plataforma. Estourou, ela se cala — o lead
+  // fica na fila para um humano, que é melhor do que uma conta impagável.
+  const usage = await consumeCoins(supabase, config.company_id, "ai_reply", {
+    contactId: contact.id,
+  });
+  if (!usage.allowed) {
+    console.log("maybeAiReply: cota de coins esgotada", config.company_id);
+    return;
+  }
 
   // Negócio já fechado (Ganho ou Perdido): a etapa vale como resposta mesmo sem
   // ninguém do time ter escrito — é o caso do funil automático da 0024, que

@@ -1,6 +1,7 @@
 export * from "./useContactsQuery";
 export * from "./useCompanyTeamQuery";
 export * from "./useFeaturesQuery";
+export * from "./useUsageQuery";
 export * from "./usePipelineStagesQuery";
 export * from "./useLibraryQuery";
 export * from "./useAppointmentsQuery";
