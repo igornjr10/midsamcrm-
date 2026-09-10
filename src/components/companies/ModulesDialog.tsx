@@ -91,8 +91,22 @@ export default function ModulesDialog({
   const handleNiche = async (value: string) => {
     if (!companyId) return;
     try {
-      await setNiche.mutateAsync({ companyId, nicheKey: value === "none" ? null : value });
-      toast.success(value === "none" ? "Nicho removido — tudo liberado." : "Nicho atualizado.");
+      const result = await setNiche.mutateAsync({ companyId, nicheKey: value === "none" ? null : value });
+      if (value === "none") {
+        toast.success("Nicho removido — tudo liberado.");
+        return;
+      }
+      // Diz o que o modelo trouxe: "Nicho atualizado" sozinho esconde que o
+      // funil e os campos da empresa acabaram de mudar.
+      const partes: string[] = [];
+      if (result?.stages) partes.push(`${result.stages} ${result.stages === 1 ? "etapa" : "etapas"}`);
+      if (result?.fields) partes.push(`${result.fields} ${result.fields === 1 ? "campo" : "campos"}`);
+      if (result?.kinds) partes.push(`${result.kinds} ${result.kinds === 1 ? "tipo de compromisso" : "tipos de compromisso"}`);
+      toast.success(
+        partes.length > 0
+          ? `Nicho atualizado · ${partes.join(", ")} do modelo adicionados.`
+          : "Nicho atualizado · a empresa já tinha tudo do modelo.",
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erro ao mudar o nicho");
     }

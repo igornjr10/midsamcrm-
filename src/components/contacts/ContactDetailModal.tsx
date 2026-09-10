@@ -12,8 +12,10 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import {
   useUpdateContactMutation, useDeleteContactMutation, useCreateAppointmentMutation, usePipelineStagesQuery,
+  useContactFieldsQuery,
 } from "@/hooks/queries";
-import { getStageLabel, getStageTone, type Contact } from "@/lib/types";
+import { getStageLabel, getStageTone, type Contact, type ContactFieldValue } from "@/lib/types";
+import ContactFieldsForm from "@/components/contacts/ContactFieldsForm";
 import { cn } from "@/lib/utils";
 
 interface ContactDetailModalProps {
@@ -29,8 +31,10 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
   const deleteContact = useDeleteContactMutation();
   const createAppointment = useCreateAppointmentMutation();
   const { data: stages = [] } = usePipelineStagesQuery(company?.id);
+  const { data: fieldDefs = [] } = useContactFieldsQuery(company?.id);
 
   const [name, setName] = useState("");
+  const [fieldValues, setFieldValues] = useState<Record<string, ContactFieldValue>>({});
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [birthDate, setBirthDate] = useState("");
@@ -47,6 +51,7 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
     setBirthDate(contact.birth_date ?? "");
     setStage(contact.stage);
     setNotes(contact.notes ?? "");
+    setFieldValues({ ...(contact.fields ?? {}) });
     setApptTitle("");
     setApptStartsAt("");
   }, [contact]);
@@ -64,6 +69,7 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
         birth_date: birthDate || null,
         stage,
         notes: notes.trim() || null,
+        fields: fieldValues,
       });
       toast.success("Contato salvo");
       onClose();
@@ -187,6 +193,18 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
               </SelectContent>
             </Select>
           </div>
+          {fieldDefs.length > 0 && (
+            <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Dados do negócio
+              </p>
+              <ContactFieldsForm
+                fields={fieldDefs}
+                values={fieldValues}
+                onChange={(key, value) => setFieldValues((p) => ({ ...p, [key]: value }))}
+              />
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label>Notas</Label>
             <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />

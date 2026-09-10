@@ -47,6 +47,28 @@ export interface Contact {
   nps_score: number | null;
   nps_asked_at: string | null;
   nps_answered_at: string | null;
+  /** Campos personalizados (contact_fields), indexados pela chave. */
+  fields: Record<string, ContactFieldValue>;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ContactFieldValue = string | number | null;
+export type ContactFieldType = "text" | "number" | "date" | "select";
+
+/** Campo extra do contato, definido pela empresa (ou pelo modelo do nicho). */
+export interface ContactField {
+  id: string;
+  company_id: string;
+  /** Chave em contacts.fields. Imutável depois de criada. */
+  key: string;
+  label: string;
+  type: ContactFieldType;
+  /** Só para type = "select". */
+  options: string[];
+  /** Aparece no card do Pipeline e no painel do Chat. */
+  show_on_card: boolean;
+  position: number;
   created_at: string;
   updated_at: string;
 }
@@ -149,7 +171,22 @@ export interface Conversation {
   created_at: string;
 }
 
-export type AppointmentKind = "meeting" | "call" | "visit" | "followup" | "other";
+/**
+ * Tipo do compromisso. Os cinco base são fixos; a empresa pode ter outros
+ * (appointment_kinds), vindos do modelo do nicho — por isso é string.
+ */
+export type AppointmentKind = string;
+
+/** Tipo de compromisso extra da empresa (degustação, consulta, assembleia...). */
+export interface AppointmentKindDef {
+  id: string;
+  company_id: string;
+  key: string;
+  label: string;
+  tone: StageTone;
+  position: number;
+  created_at: string;
+}
 /** pending = pedido do lead que o SDR IA registrou, aguardando confirmação. */
 export type AppointmentStatus = "pending" | "scheduled" | "done" | "canceled";
 

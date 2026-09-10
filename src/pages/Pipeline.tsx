@@ -2,7 +2,10 @@ import { useMemo, useState } from "react";
 import { Kanban, Phone, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import { useContactsQuery, useUpdateContactMutation, usePipelineStagesQuery } from "@/hooks/queries";
+import {
+  useContactsQuery, useUpdateContactMutation, usePipelineStagesQuery, useContactFieldsQuery,
+} from "@/hooks/queries";
+import { cardFields } from "@/lib/fields";
 import { contactInitial, contactLabel, contactSubtitle, getToneClasses, type Contact } from "@/lib/types";
 import ContactDetailModal from "@/components/contacts/ContactDetailModal";
 import StagesDialog from "@/components/pipeline/StagesDialog";
@@ -18,6 +21,7 @@ export default function Pipeline() {
   const { company } = useAuth();
   const { data: contacts = [] } = useContactsQuery(company?.id);
   const { data: stages = [] } = usePipelineStagesQuery(company?.id);
+  const { data: fieldDefs = [] } = useContactFieldsQuery(company?.id);
   const updateContact = useUpdateContactMutation();
 
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -154,6 +158,28 @@ export default function Pipeline() {
                           )}
                         </div>
                       </div>
+                      {/* O que o nicho considera essencial ver sem abrir o
+                          contato: data do evento, vencimento, unidade... */}
+                      {(() => {
+                        const extras = cardFields(fieldDefs, contact);
+                        if (extras.length === 0) return null;
+                        return (
+                          <div className="mt-2.5 space-y-1 border-t border-border/60 pt-2">
+                            {extras.map(({ field, text, urgent }) => (
+                              <p
+                                key={field.id}
+                                className={cn(
+                                  "tabular flex items-baseline justify-between gap-2 text-xs",
+                                  urgent ? "font-medium text-warning" : "text-muted-foreground",
+                                )}
+                              >
+                                <span className="truncate">{field.label}</span>
+                                <span className="shrink-0">{text}</span>
+                              </p>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
                   ))
                 )}

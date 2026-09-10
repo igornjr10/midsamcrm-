@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { BadgeCheck, Plus, Search, Users } from "lucide-react";
+import { BadgeCheck, Plus, Search, SlidersHorizontal, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useContactsQuery, useCreateContactMutation, usePipelineStagesQuery } from "@/hooks/queries";
@@ -8,6 +8,7 @@ import {
   type Contact, type ContactFilter,
 } from "@/lib/types";
 import ContactDetailModal from "@/components/contacts/ContactDetailModal";
+import ContactFieldsDialog from "@/components/contacts/ContactFieldsDialog";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +41,7 @@ export default function Contacts() {
   const [smartFilter, setSmartFilter] = useState<ContactFilter>("all");
   const [selected, setSelected] = useState<Contact | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [fieldsOpen, setFieldsOpen] = useState(false);
   const [form, setForm] = useState({ name: "", phone: "", email: "" });
 
   const filtered = useMemo(() => {
@@ -90,37 +92,43 @@ export default function Contacts() {
             : `${filtered.length} de ${contacts.length} contatos`
         }
         actions={
-          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus />
-                Novo contato
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-sm">
-              <DialogHeader>
-                <DialogTitle>Novo contato</DialogTitle>
-                <DialogDescription>Cadastre um contato manualmente.</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <Label>Nome</Label>
-                  <Input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Telefone</Label>
-                  <Input value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>E-mail</Label>
-                  <Input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} />
-                </div>
-                <Button className="w-full" onClick={handleCreate} disabled={createContact.isPending}>
-                  {createContact.isPending ? "Criando..." : "Criar"}
+          <>
+            <Button variant="outline" onClick={() => setFieldsOpen(true)}>
+              <SlidersHorizontal />
+              Campos
+            </Button>
+            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus />
+                  Novo contato
                 </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </DialogTrigger>
+              <DialogContent className="max-w-sm">
+                <DialogHeader>
+                  <DialogTitle>Novo contato</DialogTitle>
+                  <DialogDescription>Cadastre um contato manualmente.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label>Nome</Label>
+                    <Input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Telefone</Label>
+                    <Input value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>E-mail</Label>
+                    <Input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} />
+                  </div>
+                  <Button className="w-full" onClick={handleCreate} disabled={createContact.isPending}>
+                    {createContact.isPending ? "Criando..." : "Criar"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </>
         }
       />
 
@@ -243,6 +251,7 @@ export default function Contacts() {
         </div>
       </div>
 
+      <ContactFieldsDialog open={fieldsOpen} onOpenChange={setFieldsOpen} />
       <ContactDetailModal contact={selected} open={!!selected} onClose={() => setSelected(null)} />
     </div>
   );

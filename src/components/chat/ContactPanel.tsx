@@ -7,8 +7,10 @@ import {
   useCreateAppointmentMutation,
   useUpdateContactMutation,
   usePipelineStagesQuery,
+  useContactFieldsQuery,
 } from "@/hooks/queries";
 import { getStageLabel, getStageTone, type Contact } from "@/lib/types";
+import { formatFieldValue } from "@/lib/fields";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,7 +36,11 @@ const dia = (iso: string) => new Date(iso).toLocaleDateString("pt-BR");
 export default function ContactPanel({ contact }: { contact: Contact }) {
   const { user, company } = useAuth();
   const { data: stages = [] } = usePipelineStagesQuery(company?.id);
+  const { data: fieldDefs = [] } = useContactFieldsQuery(company?.id);
   const { data: appointments = [] } = useContactAppointmentsQuery(company?.id, contact.id);
+  const dados = fieldDefs
+    .map((f) => ({ field: f, text: formatFieldValue(f, contact.fields?.[f.key]) }))
+    .filter((d): d is { field: typeof d.field; text: string } => !!d.text);
   const createAppointment = useCreateAppointmentMutation();
   const updateContact = useUpdateContactMutation();
 
@@ -164,6 +170,23 @@ export default function ContactPanel({ contact }: { contact: Contact }) {
               {getStageLabel(stages, contact.stage)}
             </Badge>
           </div>
+
+          {/* ── Dados do negócio ───────────────────────────────────────────── */}
+          {dados.length > 0 && (
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Dados
+              </p>
+              <dl className="space-y-1.5 rounded-lg border p-2.5 text-xs">
+                {dados.map(({ field, text }) => (
+                  <div key={field.id} className="flex items-baseline justify-between gap-2">
+                    <dt className="truncate text-muted-foreground">{field.label}</dt>
+                    <dd className="tabular shrink-0 font-medium">{text}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
 
           {/* ── Agenda ─────────────────────────────────────────────────────── */}
           <div>

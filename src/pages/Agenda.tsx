@@ -12,8 +12,9 @@ import {
   useDeleteAppointmentMutation,
   useContactsQuery,
   useGoogleCalendarAutoSync,
+  useAppointmentKindsQuery,
 } from "@/hooks/queries";
-import type { Appointment, AppointmentKind } from "@/lib/types";
+import { STAGE_TONES, type Appointment, type AppointmentKind } from "@/lib/types";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-const KINDS: Record<AppointmentKind, { label: string; dot: string }> = {
+const KINDS: Record<string, { label: string; dot: string }> = {
   meeting: { label: "Reunião", dot: "bg-primary" },
   call: { label: "Ligação", dot: "bg-sky-500" },
   visit: { label: "Visita", dot: "bg-violet-500" },
@@ -80,6 +81,14 @@ export default function Agenda() {
 
   const { data: appointments = [], isPending } = useAppointmentsQuery(company?.id, range);
   const { data: contacts = [] } = useContactsQuery(company?.id);
+  const { data: companyKinds = [] } = useAppointmentKindsQuery(company?.id);
+  // Tipos base mais os do nicho (degustação, consulta, assembleia...).
+  const kinds = useMemo(() => {
+    const extra = Object.fromEntries(
+      companyKinds.map((k) => [k.key, { label: k.label, dot: STAGE_TONES[k.tone]?.dot ?? KINDS.other.dot }]),
+    );
+    return { ...KINDS, ...extra };
+  }, [companyKinds]);
   // Puxa o que mudou no Google antes de desenhar o mês. Não bloqueia nada: a
   // agenda local aparece na hora e ganha os eventos de lá quando chegarem.
   const googleSync = useGoogleCalendarAutoSync(company?.id);
@@ -275,7 +284,7 @@ export default function Agenda() {
                         <span
                           className={cn(
                             "h-1.5 w-1.5 shrink-0 rounded-full",
-                            KINDS[item.kind]?.dot ?? KINDS.other.dot,
+                            kinds[item.kind]?.dot ?? KINDS.other.dot,
                             // Pendência não é apagada: é o que mais precisa ser visto.
                             !isOpen(item.status) && "opacity-40",
                           )}
@@ -370,7 +379,7 @@ export default function Agenda() {
                               ? "Dia inteiro"
                               : `${hhmm(item.starts_at)}${item.ends_at ? ` – ${hhmm(item.ends_at)}` : ""}`}
                             {" · "}
-                            {KINDS[item.kind]?.label ?? KINDS.other.label}
+                            {kinds[item.kind]?.label ?? KINDS.other.label}
                           </span>
                           {contactName && (
                             <span className="flex min-w-0 items-center gap-1">
@@ -463,7 +472,7 @@ export default function Agenda() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(KINDS).map(([value, { label }]) => (
+                    {Object.entries(kinds).map(([value, { label }]) => (
                       <SelectItem key={value} value={value}>
                         {label}
                       </SelectItem>

@@ -4,6 +4,8 @@ export * from "./useFeaturesQuery";
 export * from "./useUsageQuery";
 export * from "./useRelationshipQuery";
 export * from "./usePipelineStagesQuery";
+export * from "./useContactFieldsQuery";
+export * from "./useAppointmentKindsQuery";
 export * from "./useLibraryQuery";
 export * from "./useAppointmentsQuery";
 export * from "./useGoogleCalendarQuery";

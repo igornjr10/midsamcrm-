@@ -859,6 +859,50 @@ async function sendOffHoursNotice(
   });
 }
 
+type ContactFieldDef = { key: string; label: string; type: string; options: string[] };
+
+/**
+ * Ferramenta montada por empresa: os parâmetros são os campos que ela definiu
+ * (data do evento, vencimento, unidade...). Sem campos, a ferramenta não existe.
+ */
+function buildAtualizarDadosTool(defs: ContactFieldDef[]) {
+  const properties: Record<string, unknown> = {};
+  for (const d of defs) {
+    properties[d.key] = d.type === "select" && d.options.length > 0
+      ? { type: "string", enum: d.options, description: d.label }
+      : d.type === "number"
+      ? { type: "number", description: d.label }
+      : d.type === "date"
+      ? { type: "string", description: `${d.label}, no formato AAAA-MM-DD` }
+      : { type: "string", description: d.label };
+  }
+  return {
+    type: "function",
+    function: {
+      name: "atualizar_dados",
+      description:
+        "Grava no cadastro do lead um dado que ele acabou de informar na conversa (só os campos " +
+        "listados). Chame assim que o dado aparecer, sem perguntar de novo o que já está preenchido.",
+      parameters: { type: "object", properties },
+    },
+  };
+}
+
+function contactBrief(defs: ContactFieldDef[], values: Record<string, unknown>): string {
+  if (defs.length === 0) return "";
+  const linhas = defs.map((d) => {
+    const v = values?.[d.key];
+    const texto = v === null || v === undefined || v === "" ? "(não informado)" : String(v);
+    return `- ${d.label}: ${texto}`;
+  });
+  return (
+    "\n\nDados do cadastro deste lead:\n" + linhas.join("\n") +
+    "\nQuando ele informar um dado que está como (não informado), ou corrigir um, chame " +
+    "atualizar_dados. Aproveite a conversa para preencher o que falta, uma pergunta de cada vez, " +
+    "sem virar formulário."
+  );
+}
+
 const CHAMAR_HUMANO_TOOL = {
   type: "function",
   function: {
@@ -987,6 +1031,19 @@ async function maybeAiReply(
   });
   const library = (libraryRaw ?? []) as LibraryAsset[];
 
+  // Campos personalizados: o que a empresa quer saber de cada lead. Entram no
+  // prompt e viram uma ferramenta para a IA preencher o que descobrir.
+  const [{ data: fieldDefsRaw }, { data: contactRow }] = await Promise.all([
+    supabase
+      .from("contact_fields")
+      .select("key, label, type, options")
+      .eq("company_id", config.company_id)
+      .order("position"),
+    supabase.from("contacts").select("fields").eq("id", contact.id).maybeSingle(),
+  ]);
+  const fieldDefs = (fieldDefsRaw ?? []) as ContactFieldDef[];
+  const fieldValues = ((contactRow as { fields?: Record<string, unknown> } | null)?.fields ?? {});
+
   const libraryBrief = library.length > 0
     ? "\n\nArquivos que você pode enviar (use a ferramenta enviar_arquivo com o id):\n" +
       library.map((a) => `- ${a.id} · [${a.kind}] ${a.title}${a.description ? `: ${a.description}` : ""}`).join("\n") +
@@ -1008,7 +1065,8 @@ async function maybeAiReply(
         "para abrir a tarefa de confirmação antes de responder. " +
         "Se ele pedir para falar com uma pessoa, reclamar, ou perguntar algo que você não pode " +
         "responder com segurança, chame chamar_humano em vez de improvisar." +
-        libraryBrief,
+        libraryBrief +
+        contactBrief(fieldDefs, fieldValues),
     },
     ...((history ?? []) as Array<{ sender: string; content: string }>)
       .slice()
@@ -1022,6 +1080,7 @@ async function maybeAiReply(
   const tools: Array<Record<string, unknown>> = [
     CONSULTAR_DATA_TOOL, CONSULTAR_AGENDA_TOOL, REGISTRAR_AGENDAMENTO_TOOL, CHAMAR_HUMANO_TOOL,
   ];
+  if (fieldDefs.length > 0) tools.push(buildAtualizarDadosTool(fieldDefs));
   if (library.length > 0) {
     tools.push({
         type: "function",
@@ -1176,6 +1235,42 @@ async function maybeAiReply(
 
         // Devolve ao modelo e segue: ele ainda precisa responder ao lead que
         // vai confirmar. Sem isto o turno acabaria sem resposta nenhuma.
+        messages.push({
+          role: "assistant",
+          content: choice.content ?? null,
+          tool_calls: choice.tool_calls,
+        });
+        messages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: JSON.stringify(result),
+        });
+        continue;
+      }
+
+      if (call?.function?.name === "atualizar_dados") {
+        const args = JSON.parse(call.function.arguments || "{}") as Record<string, unknown>;
+        // Só chaves conhecidas e só valores preenchidos: o modelo às vezes
+        // manda o objeto inteiro com null no que não descobriu.
+        const patch: Record<string, unknown> = {};
+        for (const d of fieldDefs) {
+          const v = args[d.key];
+          if (v === null || v === undefined || v === "") continue;
+          if (d.type === "select" && d.options.length > 0 && !d.options.includes(String(v))) continue;
+          if (d.type === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(String(v))) continue;
+          patch[d.key] = d.type === "number" ? Number(v) : String(v);
+        }
+        let result: Record<string, unknown>;
+        if (Object.keys(patch).length === 0) {
+          result = { erro: "nenhum dado válido para gravar" };
+        } else {
+          Object.assign(fieldValues, patch);
+          const { error } = await supabase
+            .from("contacts")
+            .update({ fields: fieldValues })
+            .eq("id", contact.id);
+          result = error ? { erro: error.message } : { ok: true, gravado: Object.keys(patch) };
+        }
         messages.push({
           role: "assistant",
           content: choice.content ?? null,

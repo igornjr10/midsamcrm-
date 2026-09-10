@@ -108,19 +108,39 @@ export function useCompanyOverridesQuery(companyId: string | undefined, enabled 
   });
 }
 
+/** O que apply_niche_template adicionou à empresa. */
+export type NicheTemplateResult = { stages: number; removed: number; fields: number; kinds: number };
+
+/**
+ * Troca o nicho e leva o modelo dele para a empresa: etapas do funil, campos
+ * do contato e tipos de compromisso. O modelo é aditivo — nada que já existe
+ * é sobrescrito, e etapa com contato dentro fica.
+ */
 export function useSetCompanyNicheMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ companyId, nicheKey }: { companyId: string; nicheKey: string | null }) => {
+    mutationFn: async ({
+      companyId,
+      nicheKey,
+    }: { companyId: string; nicheKey: string | null }): Promise<NicheTemplateResult | null> => {
       const { error } = await supabase
         .from("companies")
         .update({ niche_key: nicheKey })
         .eq("id", companyId);
       if (error) throw error;
+      if (!nicheKey) return null;
+      const { data, error: applyError } = await supabase.rpc("apply_niche_template", {
+        p_company_id: companyId,
+      });
+      if (applyError) throw applyError;
+      return (data ?? null) as NicheTemplateResult | null;
     },
     onSuccess: (_, { companyId }) => {
       void queryClient.invalidateQueries({ queryKey: featuresQueryKey(companyId) });
       void queryClient.invalidateQueries({ queryKey: ["all-companies"] });
+      void queryClient.invalidateQueries({ queryKey: ["pipeline-stages", companyId] });
+      void queryClient.invalidateQueries({ queryKey: ["contact-fields", companyId] });
+      void queryClient.invalidateQueries({ queryKey: ["appointment-kinds", companyId] });
     },
   });
 }
