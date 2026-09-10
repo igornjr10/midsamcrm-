@@ -111,6 +111,7 @@ export function useCompanyOverridesQuery(companyId: string | undefined, enabled 
 /** O que apply_niche_template adicionou à empresa. */
 export type NicheTemplateResult = {
   stages: number; removed: number; fields: number; kinds: number; rules: number; tags: number; replies: number;
+  records: number;
 };
 
 /**
@@ -146,6 +147,7 @@ export function useSetCompanyNicheMutation() {
       void queryClient.invalidateQueries({ queryKey: ["relationship-rules", "data", companyId] });
       void queryClient.invalidateQueries({ queryKey: ["contact-tags", companyId] });
       void queryClient.invalidateQueries({ queryKey: ["quick-replies", companyId] });
+      void queryClient.invalidateQueries({ queryKey: ["record-types", companyId] });
     },
   });
 }

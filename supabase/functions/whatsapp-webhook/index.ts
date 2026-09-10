@@ -889,6 +889,34 @@ function buildAtualizarDadosTool(defs: ContactFieldDef[]) {
 }
 
 type TagDef = { name: string; escalate: boolean };
+type RecordTypeRow = {
+  key: string; label: string; label_plural: string;
+  fields: Array<{ key: string; label: string; type: string }>;
+  date_field_key: string | null;
+};
+type ContactRecordRow = { type_key: string; title: string; fields: Record<string, unknown>; main_date: string | null };
+
+/** "Apólices: - Auto Honda (Seguradora: Porto; Vencimento: 2026-10-12)". */
+function recordsBrief(types: RecordTypeRow[], records: ContactRecordRow[]): string {
+  if (records.length === 0) return "";
+  const blocos: string[] = [];
+  for (const t of types) {
+    const lista = records.filter((r) => r.type_key === t.key);
+    if (lista.length === 0) continue;
+    const linhas = lista.map((r) => {
+      const campos = t.fields
+        .map((f) => {
+          const v = r.fields?.[f.key];
+          return v === null || v === undefined || v === "" ? null : `${f.label}: ${String(v)}`;
+        })
+        .filter(Boolean)
+        .join("; ");
+      return `- ${r.title}${campos ? ` (${campos})` : ""}`;
+    });
+    blocos.push(`${t.label_plural}:\n${linhas.join("\n")}`);
+  }
+  return blocos.length > 0 ? "\n\nRegistros deste lead:\n" + blocos.join("\n") : "";
+}
 type QuickReplyRow = { title: string; content: string };
 
 function buildMarcarEtiquetaTool(tags: TagDef[]) {
@@ -1076,7 +1104,10 @@ async function maybeAiReply(
 
   // Campos personalizados: o que a empresa quer saber de cada lead. Entram no
   // prompt e viram uma ferramenta para a IA preencher o que descobrir.
-  const [{ data: fieldDefsRaw }, { data: contactRow }, { data: tagsRaw }, { data: repliesRaw }] =
+  const [
+    { data: fieldDefsRaw }, { data: contactRow }, { data: tagsRaw }, { data: repliesRaw },
+    { data: recordTypesRaw }, { data: recordsRaw },
+  ] =
     await Promise.all([
       supabase
         .from("contact_fields")
@@ -1086,7 +1117,11 @@ async function maybeAiReply(
       supabase.from("contacts").select("fields, tags").eq("id", contact.id).maybeSingle(),
       supabase.from("contact_tags").select("name, escalate").eq("company_id", config.company_id).order("position"),
       supabase.from("quick_replies").select("title, content").eq("company_id", config.company_id).order("position"),
+      supabase.from("record_types").select("key, label, label_plural, fields, date_field_key").eq("company_id", config.company_id).order("position"),
+      supabase.from("contact_records").select("type_key, title, fields, main_date").eq("contact_id", contact.id).order("main_date"),
     ]);
+  const recordTypes = (recordTypesRaw ?? []) as RecordTypeRow[];
+  const contactRecords = (recordsRaw ?? []) as ContactRecordRow[];
   const fieldDefs = (fieldDefsRaw ?? []) as ContactFieldDef[];
   const contactData = contactRow as { fields?: Record<string, unknown>; tags?: string[] } | null;
   const fieldValues = contactData?.fields ?? {};
@@ -1118,6 +1153,7 @@ async function maybeAiReply(
         libraryBrief +
         quickRepliesBrief(quickReplies) +
         contactBrief(fieldDefs, fieldValues) +
+        recordsBrief(recordTypes, contactRecords) +
         tagsBrief(tagDefs, contactTags),
     },
     ...((history ?? []) as Array<{ sender: string; content: string }>)

@@ -56,6 +56,8 @@ type Target = {
   phone: string | null;
   /** Régua por data: o valor do campo, para {{data}}. */
   field_value: string | null;
+  /** Régua sobre registro: o título dele (a apólice, o pacote), para {{titulo}}. */
+  record_title: string | null;
 };
 
 /** "2026-10-12" -> "12/10/2026". O que não parece data volta como veio. */
@@ -68,7 +70,9 @@ function renderDatePlaceholders(template: string, rule: Rule, target: Target): s
   if (rule.kind !== "data") return template;
   return template
     .replace(/\{\{\s*data\s*\}\}/gi, formatDate(target.field_value))
-    .replace(/\{\{\s*dias\s*\}\}/gi, String(Math.abs(rule.offset_days)));
+    .replace(/\{\{\s*dias\s*\}\}/gi, String(Math.abs(rule.offset_days)))
+    .replace(/\{\{\s*titulo\s*\}\}/gi, target.record_title ?? "")
+    .replace(/\s{2,}/g, " ");
 }
 
 /** Espaçamento entre envios: o número não pode disparar em rajada. */

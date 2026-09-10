@@ -12,6 +12,7 @@ import {
 import { getStageLabel, getStageTone, type Contact } from "@/lib/types";
 import { formatFieldValue } from "@/lib/fields";
 import TagPicker from "@/components/contacts/TagPicker";
+import ContactRecords from "@/components/contacts/ContactRecords";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -204,6 +205,8 @@ export default function ContactPanel({ contact }: { contact: Contact }) {
               </dl>
             </div>
           )}
+
+          <ContactRecords contact={contact} compact />
 
           {/* ── Agenda ─────────────────────────────────────────────────────── */}
           <div>

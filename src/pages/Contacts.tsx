@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
-import { BadgeCheck, Plus, Search, SlidersHorizontal, Tag, Users } from "lucide-react";
+import { BadgeCheck, Layers, Plus, Search, SlidersHorizontal, Tag, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import {
   useContactsQuery, useCreateContactMutation, usePipelineStagesQuery, useContactTagsQuery,
+  useRecordTypesQuery,
 } from "@/hooks/queries";
 import {
   CONTACT_FILTERS, getStageLabel, getStageTone, matchesContactFilter,
@@ -12,6 +13,9 @@ import {
 import ContactDetailModal from "@/components/contacts/ContactDetailModal";
 import ContactFieldsDialog from "@/components/contacts/ContactFieldsDialog";
 import TagsDialog from "@/components/contacts/TagsDialog";
+import RecordTypesDialog from "@/components/contacts/RecordTypesDialog";
+import RecordsTable from "@/components/contacts/RecordsTable";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TagBadge } from "@/components/contacts/TagPicker";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -47,6 +51,11 @@ export default function Contacts() {
   const [createOpen, setCreateOpen] = useState(false);
   const [fieldsOpen, setFieldsOpen] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
+  const [recordTypesOpen, setRecordTypesOpen] = useState(false);
+  // "contatos" ou a chave de um tipo de registro (apólices, pacotes...).
+  const [view, setView] = useState("contatos");
+  const { data: recordTypes = [] } = useRecordTypesQuery(company?.id);
+  const recordView = recordTypes.find((t) => t.key === view) ?? null;
   const [tagFilter, setTagFilter] = useState("all");
   const { data: tagCatalog = [] } = useContactTagsQuery(company?.id);
   const [form, setForm] = useState({ name: "", phone: "", email: "" });
@@ -101,6 +110,10 @@ export default function Contacts() {
         }
         actions={
           <>
+            <Button variant="outline" onClick={() => setRecordTypesOpen(true)}>
+              <Layers />
+              Registros
+            </Button>
             <Button variant="outline" onClick={() => setTagsOpen(true)}>
               <Tag />
               Etiquetas
@@ -144,6 +157,26 @@ export default function Contacts() {
         }
       />
 
+      {recordTypes.length > 0 && (
+        <Tabs value={view} onValueChange={setView} className="mb-4">
+          <TabsList>
+            <TabsTrigger value="contatos">
+              <Users />
+              Contatos
+            </TabsTrigger>
+            {recordTypes.map((t) => (
+              <TabsTrigger key={t.key} value={t.key}>
+                {t.label_plural}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      )}
+
+      {recordView ? (
+        <RecordsTable type={recordView} onOpenContact={setSelected} />
+      ) : (
+        <>
       <div className="mb-4 flex flex-col gap-3 sm:flex-row">
         <div className="relative flex-1 sm:max-w-sm">
           <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -285,8 +318,11 @@ export default function Contacts() {
           </table>
         </div>
       </div>
+        </>
+      )}
 
       <ContactFieldsDialog open={fieldsOpen} onOpenChange={setFieldsOpen} />
+      <RecordTypesDialog open={recordTypesOpen} onOpenChange={setRecordTypesOpen} />
       <TagsDialog open={tagsOpen} onOpenChange={setTagsOpen} />
       <ContactDetailModal contact={selected} open={!!selected} onClose={() => setSelected(null)} />
     </div>

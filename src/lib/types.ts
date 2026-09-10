@@ -55,6 +55,41 @@ export interface Contact {
   updated_at: string;
 }
 
+/** O mínimo que um formulário de campos precisa (contact_fields ou record_types.fields). */
+export type FieldDef = Pick<ContactField, "key" | "label" | "type" | "options">;
+
+/**
+ * Tipo de sub-registro do contato: Apólice, Pacote de sessões, Unidade.
+ * Descreve os campos e diz qual é a data principal.
+ */
+export interface RecordType {
+  id: string;
+  company_id: string;
+  key: string;
+  label: string;
+  label_plural: string;
+  fields: FieldDef[];
+  /** Campo (type = date) que vira main_date dos registros. */
+  date_field_key: string | null;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Um registro de um contato: uma apólice, um pacote, uma unidade. */
+export interface ContactRecord {
+  id: string;
+  company_id: string;
+  contact_id: string;
+  type_key: string;
+  title: string;
+  fields: Record<string, ContactFieldValue>;
+  /** Cópia de fields[date_field_key], mantida por trigger. */
+  main_date: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** Etiqueta do catálogo da empresa: VIP, Atacado, Sinistro... */
 export interface ContactTag {
   id: string;

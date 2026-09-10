@@ -1,4 +1,4 @@
-import type { Contact, ContactField, ContactFieldValue } from "@/lib/types";
+import type { Contact, ContactField, ContactFieldValue, FieldDef, RecordType } from "@/lib/types";
 
 /**
  * Chave estável para um campo novo. Vai para contacts.fields de cada contato,
@@ -42,7 +42,7 @@ export function dateHint(iso: string): { label: string; relative: string | null;
 }
 
 /** Texto pronto para mostrar. Null quando o contato não preencheu. */
-export function formatFieldValue(field: ContactField, value: ContactFieldValue | undefined): string | null {
+export function formatFieldValue(field: FieldDef, value: ContactFieldValue | undefined): string | null {
   if (value === null || value === undefined || value === "") return null;
   if (field.type === "date" && typeof value === "string") {
     const hint = dateHint(value);
@@ -75,7 +75,7 @@ export function cardFields(fields: ContactField[], contact: Pick<Contact, "field
 }
 
 /** Converte o que veio do input para o tipo gravado no jsonb. */
-export function parseFieldInput(field: ContactField, raw: string): ContactFieldValue {
+export function parseFieldInput(field: FieldDef, raw: string): ContactFieldValue {
   const trimmed = raw.trim();
   if (!trimmed) return null;
   if (field.type === "number") {
@@ -83,4 +83,24 @@ export function parseFieldInput(field: ContactField, raw: string): ContactFieldV
     return Number.isFinite(n) ? n : null;
   }
   return trimmed;
+}
+
+/**
+ * "Auto · Porto Seguro · vence 12/10" — os campos preenchidos de um registro
+ * numa linha, sem repetir o que já está no título.
+ */
+export function recordSummary(
+  type: Pick<RecordType, "fields" | "date_field_key">,
+  values: Record<string, ContactFieldValue>,
+  title?: string,
+): string {
+  const parts: string[] = [];
+  for (const field of type.fields) {
+    if (field.key === type.date_field_key) continue;
+    const text = formatFieldValue(field, values[field.key]);
+    if (!text || (title && title.includes(text))) continue;
+    parts.push(text);
+    if (parts.length === 3) break;
+  }
+  return parts.join(" · ");
 }

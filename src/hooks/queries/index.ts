@@ -8,6 +8,7 @@ export * from "./useContactFieldsQuery";
 export * from "./useAppointmentKindsQuery";
 export * from "./useContactTagsQuery";
 export * from "./useQuickRepliesQuery";
+export * from "./useRecordsQuery";
 export * from "./useLibraryQuery";
 export * from "./useAppointmentsQuery";
 export * from "./useGoogleCalendarQuery";

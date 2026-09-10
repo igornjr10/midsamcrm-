@@ -17,6 +17,7 @@ import {
 import { getStageLabel, getStageTone, type Contact, type ContactFieldValue } from "@/lib/types";
 import ContactFieldsForm from "@/components/contacts/ContactFieldsForm";
 import TagPicker from "@/components/contacts/TagPicker";
+import ContactRecords from "@/components/contacts/ContactRecords";
 import { cn } from "@/lib/utils";
 
 interface ContactDetailModalProps {
@@ -213,6 +214,10 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
               />
             </div>
           )}
+          {/* Registros salvam sozinhos: não passam pelo botão Salvar do contato. */}
+          <div className="space-y-4">
+            <ContactRecords contact={contact} />
+          </div>
           <div className="space-y-1.5">
             <Label>Notas</Label>
             <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />

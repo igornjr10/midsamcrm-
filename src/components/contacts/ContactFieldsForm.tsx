@@ -1,11 +1,11 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { ContactField, ContactFieldValue } from "@/lib/types";
+import type { ContactFieldValue, FieldDef } from "@/lib/types";
 import { parseFieldInput } from "@/lib/fields";
 
 type Props = {
-  fields: ContactField[];
+  fields: FieldDef[];
   values: Record<string, ContactFieldValue>;
   onChange: (key: string, value: ContactFieldValue) => void;
 };
@@ -23,7 +23,7 @@ export default function ContactFieldsForm({ fields, values, onChange }: Props) {
         const raw = values[field.key];
         const text = raw === null || raw === undefined ? "" : String(raw);
         return (
-          <div key={field.id} className="space-y-1.5">
+          <div key={field.key} className="space-y-1.5">
             <Label htmlFor={`field-${field.key}`}>{field.label}</Label>
             {field.type === "select" ? (
               <Select

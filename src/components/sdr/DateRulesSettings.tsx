@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import {
   useContactFieldsQuery,
+  useRecordTypesQuery,
   useDateRulesQuery,
   useSaveDateRuleMutation,
   useDeleteRelationshipRuleMutation,
@@ -69,11 +70,22 @@ export default function DateRulesSettings() {
   const { company } = useAuth();
   const { data: rules = [] } = useDateRulesQuery(company?.id);
   const { data: fields = [] } = useContactFieldsQuery(company?.id);
+  const { data: recordTypes = [] } = useRecordTypesQuery(company?.id);
   const save = useSaveDateRuleMutation();
   const remove = useDeleteRelationshipRuleMutation();
 
-  const dateFields = fields.filter((f) => f.type === "date");
-  const labelOf = (key: string) => dateFields.find((f) => f.key === key)?.label;
+  // Gatilhos possíveis: campos de data do contato e a data principal de cada
+  // tipo de registro ("Apólice · Vencimento" vira record:apolice).
+  const dateOptions = [
+    ...fields.filter((f) => f.type === "date").map((f) => ({ value: f.key, label: f.label })),
+    ...recordTypes
+      .filter((t) => t.date_field_key)
+      .map((t) => ({
+        value: `record:${t.key}`,
+        label: `${t.label} · ${t.fields.find((f) => f.key === t.date_field_key)?.label ?? "data"}`,
+      })),
+  ];
+  const labelOf = (key: string) => dateOptions.find((o) => o.value === key)?.label;
 
   const [drafts, setDrafts] = useState<Draft[]>([]);
 
@@ -91,8 +103,8 @@ export default function DateRulesSettings() {
     setDrafts((p) => p.map((d, i) => (i === index ? { ...d, ...values } : d)));
 
   const add = () => {
-    if (dateFields.length === 0) return;
-    setDrafts((p) => [...p, { ...NOVA, id: null, field_key: dateFields[0].key }]);
+    if (dateOptions.length === 0) return;
+    setDrafts((p) => [...p, { ...NOVA, id: null, field_key: dateOptions[0].value }]);
   };
 
   const handleSave = async (d: Draft, override?: Partial<Draft>) => {
@@ -153,7 +165,7 @@ export default function DateRulesSettings() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        {dateFields.length === 0 ? (
+        {dateOptions.length === 0 ? (
           <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
             Nenhum campo de data no contato. Crie um em Contatos → Campos (tipo "Data") para usar
             réguas por data.
@@ -208,9 +220,9 @@ export default function DateRulesSettings() {
                             <SelectValue placeholder="Escolha o campo" />
                           </SelectTrigger>
                           <SelectContent>
-                            {dateFields.map((f) => (
-                              <SelectItem key={f.key} value={f.key}>
-                                {f.label}
+                            {dateOptions.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>
+                                {o.label}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -264,8 +276,9 @@ export default function DateRulesSettings() {
                       <p className="text-xs text-muted-foreground">
                         Use <span className="font-mono">{"{{primeiro_nome}}"}</span>,{" "}
                         <span className="font-mono">{"{{nome}}"}</span>,{" "}
-                        <span className="font-mono">{"{{data}}"}</span> (a data do campo) e{" "}
-                        <span className="font-mono">{"{{dias}}"}</span>.
+                        <span className="font-mono">{"{{data}}"}</span> (a data do campo),{" "}
+                        <span className="font-mono">{"{{dias}}"}</span> e, em registros,{" "}
+                        <span className="font-mono">{"{{titulo}}"}</span>.
                       </p>
                     </div>
 

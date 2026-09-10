@@ -105,6 +105,7 @@ export default function ModulesDialog({
       if (result?.rules) partes.push(`${result.rules} ${result.rules === 1 ? "régua sugerida" : "réguas sugeridas"}`);
       if (result?.tags) partes.push(`${result.tags} ${result.tags === 1 ? "etiqueta" : "etiquetas"}`);
       if (result?.replies) partes.push(`${result.replies} ${result.replies === 1 ? "resposta rápida" : "respostas rápidas"}`);
+      if (result?.records) partes.push(`${result.records} ${result.records === 1 ? "tipo de registro" : "tipos de registro"}`);
       toast.success(
         partes.length > 0
           ? `Nicho atualizado · ${partes.join(", ")} do modelo adicionados.`
