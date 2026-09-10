@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import DateRulesSettings from "@/components/sdr/DateRulesSettings";
 
 /**
  * As três réguas.
@@ -232,6 +233,8 @@ export default function RelationshipSettings() {
         );
       })}
 
+      <DateRulesSettings />
+
       <Card>
         <CardHeader>
           <CardTitle>Últimos envios</CardTitle>
@@ -250,7 +253,9 @@ export default function RelationshipSettings() {
               {logs.map((log) => (
                 <div key={log.id} className="flex items-start gap-2 rounded-lg border p-2.5 text-sm">
                   <Badge variant={log.status === "sent" ? "secondary" : "outline"}>
-                    {KIND_LABEL[log.kind] ?? log.kind}
+                    {log.kind === "data"
+                      ? log.relationship_rules?.title ?? "Por data"
+                      : KIND_LABEL[log.kind] ?? log.kind}
                   </Badge>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">

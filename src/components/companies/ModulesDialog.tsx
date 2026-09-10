@@ -102,6 +102,7 @@ export default function ModulesDialog({
       if (result?.stages) partes.push(`${result.stages} ${result.stages === 1 ? "etapa" : "etapas"}`);
       if (result?.fields) partes.push(`${result.fields} ${result.fields === 1 ? "campo" : "campos"}`);
       if (result?.kinds) partes.push(`${result.kinds} ${result.kinds === 1 ? "tipo de compromisso" : "tipos de compromisso"}`);
+      if (result?.rules) partes.push(`${result.rules} ${result.rules === 1 ? "régua sugerida" : "réguas sugeridas"}`);
       toast.success(
         partes.length > 0
           ? `Nicho atualizado · ${partes.join(", ")} do modelo adicionados.`

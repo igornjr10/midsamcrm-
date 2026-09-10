@@ -1,8 +1,12 @@
-// Réguas de relacionamento: aniversário, reativação e NPS.
+// Réguas de relacionamento: aniversário, reativação, NPS e as por data.
 //
-// Roda por cron, uma vez por dia é suficiente — nenhuma das três é urgente ao
-// minuto. Percorre as empresas com régua ligada, pergunta ao banco quem deve
-// receber (relationship_targets faz o filtro e o cooldown) e envia.
+// Roda por cron, uma vez por dia é suficiente — nenhuma delas é urgente ao
+// minuto. Percorre as réguas ligadas, pergunta ao banco quem deve receber
+// (relationship_rule_targets faz o filtro e o cooldown) e envia.
+//
+// As réguas 'data' apontam para um campo de data do contato (vencimento,
+// retorno, data do evento) e disparam N dias antes ou depois dele. A
+// mensagem pode usar {{data}} e {{dias}} além de {{nome}}/{{primeiro_nome}}.
 //
 // Autenticação como no sdr-followup: service role ou x-cron-secret.
 //
@@ -39,11 +43,33 @@ type Db = any;
 type Rule = {
   id: string;
   company_id: string;
-  kind: "aniversario" | "reativacao" | "nps";
+  kind: "aniversario" | "reativacao" | "nps" | "data";
   message: string;
+  title: string | null;
+  field_key: string | null;
+  offset_days: number;
 };
 
-type Target = { contact_id: string; name: string | null; phone: string | null };
+type Target = {
+  contact_id: string;
+  name: string | null;
+  phone: string | null;
+  /** Régua por data: o valor do campo, para {{data}}. */
+  field_value: string | null;
+};
+
+/** "2026-10-12" -> "12/10/2026". O que não parece data volta como veio. */
+function formatDate(value: string | null): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value ?? "");
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : (value ?? "");
+}
+
+function renderDatePlaceholders(template: string, rule: Rule, target: Target): string {
+  if (rule.kind !== "data") return template;
+  return template
+    .replace(/\{\{\s*data\s*\}\}/gi, formatDate(target.field_value))
+    .replace(/\{\{\s*dias\s*\}\}/gi, String(Math.abs(rule.offset_days)));
+}
 
 /** Espaçamento entre envios: o número não pode disparar em rajada. */
 const SEND_INTERVAL_MS = 400;
@@ -68,9 +94,8 @@ async function runRule(
   rule: Rule,
   config: OutboundConfig,
 ): Promise<{ sent: number; failed: number }> {
-  const { data: targets } = await supabase.rpc("relationship_targets", {
-    p_company_id: rule.company_id,
-    p_kind: rule.kind,
+  const { data: targets } = await supabase.rpc("relationship_rule_targets", {
+    p_rule_id: rule.id,
     p_limit: MAX_PER_RULE,
   });
 
@@ -89,7 +114,7 @@ async function runRule(
       break;
     }
 
-    const text = renderPlaceholders(rule.message, target.name);
+    const text = renderPlaceholders(renderDatePlaceholders(rule.message, rule, target), target.name);
     const { messageId, error } = await sendText(config, normalizePhone(target.phone), text);
 
     await supabase.from("relationship_logs").insert({
@@ -117,7 +142,10 @@ async function runRule(
         content: text,
         channel: "whatsapp",
         message_ref: messageId,
-        metadata: { deliveryStatus: "sent", relationshipRule: rule.kind },
+        metadata: {
+          deliveryStatus: "sent",
+          relationshipRule: rule.kind === "data" ? rule.title ?? "data" : rule.kind,
+        },
       });
 
       // NPS: marca que perguntou. É essa data que autoriza o webhook a ler a
@@ -154,7 +182,7 @@ Deno.serve(async (req: Request) => {
   try {
     const { data: rulesRaw } = await supabase
       .from("relationship_rules")
-      .select("id, company_id, kind, message")
+      .select("id, company_id, kind, message, title, field_key, offset_days")
       .eq("enabled", true);
     const rules = (rulesRaw ?? []) as Rule[];
 
@@ -188,7 +216,7 @@ Deno.serve(async (req: Request) => {
       }
 
       const outcome = await runRule(supabase, rule, config);
-      results.push({ company_id: rule.company_id, kind: rule.kind, ...outcome });
+      results.push({ company_id: rule.company_id, kind: rule.kind, title: rule.title, ...outcome });
     }
 
     return json({ rules: rules.length, results });

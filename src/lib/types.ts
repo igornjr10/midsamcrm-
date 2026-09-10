@@ -323,7 +323,8 @@ export interface CompanyUsage {
   period_start: string;
 }
 
-export type RelationshipKind = "aniversario" | "reativacao" | "nps";
+/** As três fixas mais "data", que dispara a partir de um campo de data do contato. */
+export type RelationshipKind = "aniversario" | "reativacao" | "nps" | "data";
 
 /**
  * Régua de relacionamento: falar com quem já é cliente sem ninguém lembrar.
@@ -344,6 +345,12 @@ export interface RelationshipRule {
   ask_after_days: number;
   /** Silêncio entre dois envios da mesma régua para o mesmo contato. */
   cooldown_days: number;
+  /** data: nome que aparece na tela e nos envios. */
+  title: string | null;
+  /** data: chave do campo (contact_fields, type = date). */
+  field_key: string | null;
+  /** data: negativo = dias antes; positivo = depois; 0 = no dia. */
+  offset_days: number;
   created_at: string;
   updated_at: string;
 }
