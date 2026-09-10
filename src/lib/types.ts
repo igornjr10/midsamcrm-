@@ -269,9 +269,128 @@ export interface Appointment {
   /** Evento correspondente no Google Calendar. Nulo = só existe no CRM. */
   google_event_id: string | null;
   google_synced_at: string | null;
+  /** Profissional, sala ou equipamento que o compromisso ocupa. */
+  resource_id: string | null;
+  /** Lembrete do dia anterior: quando saiu, e o que o cliente respondeu. */
+  reminder_sent_at: string | null;
+  confirmed_at: string | null;
+  confirmation_reply: string | null;
   created_at: string;
   updated_at: string;
 }
+
+/** Quem ou o que atende: a profissional, a sala, o laser. */
+export interface Resource {
+  id: string;
+  company_id: string;
+  name: string;
+  kind: "profissional" | "sala" | "equipamento" | "outro";
+  active: boolean;
+  position: number;
+  created_at: string;
+}
+
+export const RESOURCE_KINDS: Array<{ id: Resource["kind"]; label: string }> = [
+  { id: "profissional", label: "Profissional" },
+  { id: "sala", label: "Sala" },
+  { id: "equipamento", label: "Equipamento" },
+  { id: "outro", label: "Outro" },
+];
+
+/** Quem espera um horário. */
+export interface WaitlistEntry {
+  id: string;
+  company_id: string;
+  contact_id: string;
+  resource_id: string | null;
+  notes: string | null;
+  status: "aguardando" | "atendido" | "cancelado";
+  created_at: string;
+}
+
+// ── Pedidos ─────────────────────────────────────────────────────────────────
+
+export type OrderStatus = "recebido" | "preparo" | "saiu" | "entregue" | "cancelado";
+
+export interface OrderItem {
+  name: string;
+  qty: number;
+  /** Unitário. Null quando a IA registrou sem saber o preço. */
+  price: number | null;
+}
+
+export interface Order {
+  id: string;
+  company_id: string;
+  contact_id: string | null;
+  number: number;
+  items: OrderItem[];
+  total: number | null;
+  status: OrderStatus;
+  delivery_address: string | null;
+  notes: string | null;
+  created_by: "user" | "ai";
+  created_at: string;
+  updated_at: string;
+}
+
+export const ORDER_STATUSES: Array<{ id: OrderStatus; label: string; badge: string }> = [
+  { id: "recebido", label: "Recebido", badge: "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300" },
+  { id: "preparo", label: "Em preparo", badge: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300" },
+  { id: "saiu", label: "Saiu para entrega", badge: "border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950 dark:text-violet-300" },
+  { id: "entregue", label: "Entregue", badge: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" },
+  { id: "cancelado", label: "Cancelado", badge: "border-border text-muted-foreground" },
+];
+
+/** Soma dos itens com preço. Null quando nenhum item tem preço. */
+export function orderTotal(items: OrderItem[]): number | null {
+  let total = 0;
+  let any = false;
+  for (const i of items) {
+    if (i.price === null || i.price === undefined) continue;
+    total += i.price * (Number(i.qty) || 1);
+    any = true;
+  }
+  return any ? Math.round(total * 100) / 100 : null;
+}
+
+// ── Chamados ────────────────────────────────────────────────────────────────
+
+export type TicketStatus = "aberto" | "em_andamento" | "aguardando" | "resolvido" | "cancelado";
+export type TicketPriority = "baixa" | "normal" | "alta" | "urgente";
+
+export interface Ticket {
+  id: string;
+  company_id: string;
+  contact_id: string | null;
+  number: number;
+  title: string;
+  description: string | null;
+  category: string | null;
+  status: TicketStatus;
+  priority: TicketPriority;
+  assigned_to: string | null;
+  due_at: string | null;
+  resolved_at: string | null;
+  created_by: "user" | "ai";
+  created_at: string;
+  updated_at: string;
+}
+
+export const TICKET_STATUSES: Array<{ id: TicketStatus; label: string; badge: string }> = [
+  { id: "aberto", label: "Aberto", badge: "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300" },
+  { id: "em_andamento", label: "Em andamento", badge: "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950 dark:text-indigo-300" },
+  { id: "aguardando", label: "Aguardando", badge: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300" },
+  { id: "resolvido", label: "Resolvido", badge: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" },
+  { id: "cancelado", label: "Encerrado", badge: "border-border text-muted-foreground" },
+];
+
+export const TICKET_PRIORITIES: Array<{ id: TicketPriority; label: string; badge: string }> = [
+  { id: "baixa", label: "Baixa", badge: "border-border text-muted-foreground" },
+  { id: "normal", label: "Normal", badge: "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300" },
+  { id: "alta", label: "Alta", badge: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300" },
+  { id: "urgente", label: "Urgente", badge: "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-300" },
+];
 
 /** Estado da conexão com o Google Agenda, vindo da edge function. */
 export interface GoogleCalendarStatus {
@@ -386,7 +505,7 @@ export interface CompanyUsage {
 }
 
 /** As três fixas mais "data", que dispara a partir de um campo de data do contato. */
-export type RelationshipKind = "aniversario" | "reativacao" | "nps" | "data";
+export type RelationshipKind = "aniversario" | "reativacao" | "nps" | "data" | "agenda";
 
 /**
  * Régua de relacionamento: falar com quem já é cliente sem ninguém lembrar.

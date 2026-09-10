@@ -17,6 +17,8 @@ import Campaigns from "@/pages/Campaigns";
 import Settings from "@/pages/Settings";
 import SdrIa from "@/pages/SdrIa";
 import Companies from "@/pages/Companies";
+import Pedidos from "@/pages/Pedidos";
+import Chamados from "@/pages/Chamados";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -62,6 +64,8 @@ export default function App() {
                   <Route path="/agenda" element={<Agenda />} />
                   {/* Link antigo de Tarefas continua funcionando (favoritos, histórico). */}
                   <Route path="/tarefas" element={<Navigate to="/agenda" replace />} />
+                  <Route path="/pedidos" element={<Pedidos />} />
+                  <Route path="/chamados" element={<Chamados />} />
                   <Route path="/disparos" element={<Campaigns />} />
                   <Route path="/biblioteca" element={<Biblioteca />} />
                   <Route path="/sdr" element={<SdrIa />} />

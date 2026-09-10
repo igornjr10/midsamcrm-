@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, Navigate, useLocation } from "react-router-dom";
 import {
   Kanban, Users, MessageSquare, CalendarDays, Settings, LogOut, Loader2, Bot, Library,
-  Building2, Megaphone, Moon, Sun, Eye, Menu, X,
+  Building2, Megaphone, Moon, Sun, Eye, Menu, X, ShoppingBag, LifeBuoy,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -27,6 +27,8 @@ const NAV_GROUPS = [
     label: "Atendimento",
     items: [
       { to: "/chat", label: "Chat", icon: MessageSquare },
+      { to: "/pedidos", label: "Pedidos", icon: ShoppingBag },
+      { to: "/chamados", label: "Chamados", icon: LifeBuoy },
       { to: "/disparos", label: "Disparos", icon: Megaphone },
       { to: "/sdr", label: "SDR IA", icon: Bot },
       { to: "/biblioteca", label: "Biblioteca", icon: Library },

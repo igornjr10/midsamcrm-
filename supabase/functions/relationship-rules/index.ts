@@ -43,7 +43,7 @@ type Db = any;
 type Rule = {
   id: string;
   company_id: string;
-  kind: "aniversario" | "reativacao" | "nps" | "data";
+  kind: "aniversario" | "reativacao" | "nps" | "data" | "agenda";
   message: string;
   title: string | null;
   field_key: string | null;
@@ -168,6 +168,103 @@ async function runRule(
   return { sent, failed };
 }
 
+type ReminderTarget = {
+  appointment_id: string;
+  contact_id: string;
+  name: string | null;
+  phone: string | null;
+  title: string;
+  starts_at: string;
+  all_day: boolean;
+  resource_name: string | null;
+};
+
+function fmtInTz(iso: string, timeZone: string) {
+  const d = new Date(iso);
+  const data = new Intl.DateTimeFormat("pt-BR", { timeZone, day: "2-digit", month: "2-digit" }).format(d);
+  const dia = new Intl.DateTimeFormat("pt-BR", { timeZone, weekday: "long" }).format(d);
+  const hora = new Intl.DateTimeFormat("pt-BR", { timeZone, hour: "2-digit", minute: "2-digit" }).format(d);
+  return { data, dia, hora };
+}
+
+/**
+ * Lembrete do dia anterior. O alvo é o compromisso, não o contato: quem tem
+ * dois horários amanhã recebe dois lembretes, cada um com sua hora.
+ */
+async function runAgendaRule(
+  supabase: Db,
+  rule: Rule,
+  config: OutboundConfig,
+  timezone: string,
+): Promise<{ sent: number; failed: number }> {
+  const { data: targets } = await supabase.rpc("appointment_reminder_targets", {
+    p_company_id: rule.company_id,
+  });
+
+  let sent = 0;
+  let failed = 0;
+
+  for (const t of (targets ?? []) as ReminderTarget[]) {
+    if (!t.phone) continue;
+
+    const usage = await consumeCoins(supabase, rule.company_id, "followup_out", {
+      contactId: t.contact_id,
+      ref: "agenda",
+    });
+    if (!usage.allowed) break;
+
+    const { data, dia, hora } = fmtInTz(t.starts_at, timezone);
+    const text = renderPlaceholders(
+      rule.message
+        .replace(/\{\{\s*data\s*\}\}/gi, data)
+        .replace(/\{\{\s*dia_semana\s*\}\}/gi, dia)
+        .replace(/\{\{\s*hora\s*\}\}/gi, t.all_day ? "" : hora)
+        .replace(/\s*às\s*\{\{\s*hora\s*\}\}/gi, t.all_day ? "" : ` às ${hora}`)
+        .replace(/\{\{\s*titulo\s*\}\}/gi, t.title)
+        .replace(/\{\{\s*recurso\s*\}\}/gi, t.resource_name ? ` com ${t.resource_name}` : "")
+        .replace(/\s{2,}/g, " "),
+      t.name,
+    );
+    const { messageId, error } = await sendText(config, normalizePhone(t.phone), text);
+
+    await supabase.from("relationship_logs").insert({
+      company_id: rule.company_id,
+      rule_id: rule.id,
+      contact_id: t.contact_id,
+      kind: "agenda",
+      status: error ? "failed" : "sent",
+      content: text,
+      message_ref: messageId,
+      error,
+    });
+
+    if (error) {
+      failed += 1;
+    } else {
+      sent += 1;
+      await supabase.from("conversations").insert({
+        user_id: null,
+        company_id: rule.company_id,
+        contact_id: t.contact_id,
+        sender: "ai",
+        content: text,
+        channel: "whatsapp",
+        message_ref: messageId,
+        metadata: { deliveryStatus: "sent", relationshipRule: "agenda" },
+      });
+      // É esta data que autoriza o webhook a ler o próximo "1" ou "2" como resposta.
+      await supabase
+        .from("appointments")
+        .update({ reminder_sent_at: new Date().toISOString() })
+        .eq("id", t.appointment_id);
+    }
+
+    await sleep(SEND_INTERVAL_MS);
+  }
+
+  return { sent, failed };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -219,7 +316,9 @@ Deno.serve(async (req: Request) => {
         continue;
       }
 
-      const outcome = await runRule(supabase, rule, config);
+      const outcome = rule.kind === "agenda"
+        ? await runAgendaRule(supabase, rule, config, timezone)
+        : await runRule(supabase, rule, config);
       results.push({ company_id: rule.company_id, kind: rule.kind, title: rule.title, ...outcome });
     }
 

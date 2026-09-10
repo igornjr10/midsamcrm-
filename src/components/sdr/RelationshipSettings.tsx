@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Cake, HeartHandshake, Star } from "lucide-react";
+import { Cake, CalendarCheck, HeartHandshake, Star } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -66,12 +66,22 @@ const RULES: Array<{
       hint: "Tempo entre o negócio ir para Ganho e a pergunta sair",
     },
   },
+  {
+    kind: "agenda",
+    titulo: "Lembrete de compromisso",
+    descricao:
+      "No dia anterior, para quem tem compromisso marcado. Responder 1 confirma; 2 pede remarcação e chama a equipe. Aceita {{data}}, {{hora}}, {{titulo}} e {{recurso}}.",
+    icone: CalendarCheck,
+    padrao:
+      "Oi {{primeiro_nome}}! Lembrando do seu horário amanhã, {{data}} às {{hora}}{{recurso}}. Responda 1 para confirmar ou 2 se precisar remarcar.",
+  },
 ];
 
 const KIND_LABEL: Record<string, string> = {
   aniversario: "Aniversário",
   reativacao: "Reativação",
   nps: "NPS",
+  agenda: "Lembrete",
 };
 
 export default function RelationshipSettings() {
@@ -202,7 +212,7 @@ export default function RelationshipSettings() {
                     <p className="text-xs text-muted-foreground">{rule.campo.hint}</p>
                   </div>
                 )}
-                {rule.kind !== "aniversario" && (
+                {rule.kind !== "aniversario" && rule.kind !== "agenda" && (
                 <div className="space-y-1.5">
                   <Label>Não repetir por (dias)</Label>
                   <Input
