@@ -12,7 +12,7 @@ const Checkbox = React.forwardRef<
     ref={ref}
     className={cn(
       // rounded-[5px] em vez de rounded-sm: o --radius de 0.75rem deixa uma caixa de 18px quase circular
-      "peer h-[18px] w-[18px] shrink-0 rounded-[5px] border-2 border-border bg-background ring-offset-background transition-colors hover:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground",
+      "peer h-[18px] w-[18px] shrink-0 rounded-[5px] border-2 border-border bg-card ring-offset-background transition-colors hover:border-primary/60 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/15 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground",
       className,
     )}
     {...props}

@@ -51,6 +51,58 @@ export interface Contact {
   updated_at: string;
 }
 
+/**
+ * Telefone legível: 559984573986 -> (99) 98457-3986.
+ *
+ * Só formata o que parece telefone. Contato criado antes da tradução do @lid
+ * tem 15 dígitos no lugar do número — enfeitar aquilo de parênteses faria um id
+ * opaco passar por telefone de verdade.
+ */
+export function formatPhone(raw: string | null | undefined): string | null {
+  const digits = (raw ?? "").replace(/\D/g, "");
+  if (!digits) return null;
+
+  const local = digits.startsWith("55") ? digits.slice(2) : digits;
+  if (local.length === 11) return `(${local.slice(0, 2)}) ${local.slice(2, 7)}-${local.slice(7)}`;
+  if (local.length === 10) return `(${local.slice(0, 2)}) ${local.slice(2, 6)}-${local.slice(6)}`;
+  return raw ?? null;
+}
+
+/**
+ * O que escrever como nome do contato.
+ *
+ * Quem chega pelo WhatsApp sem nome na agenda nasce com o próprio telefone no
+ * lugar do nome — e a tela repetia o mesmo número duas vezes, como título e
+ * como subtítulo. Aqui o número vira telefone formatado uma vez só.
+ */
+export function contactLabel(contact: Pick<Contact, "name" | "phone">): string {
+  const name = contact.name?.trim() ?? "";
+  const soDigitos = /^\d+$/.test(name);
+  if (name && !soDigitos) return name;
+  return formatPhone(contact.phone) ?? (name || "Sem nome");
+}
+
+/** O telefone, quando ele já não é o próprio título. */
+export function contactSubtitle(contact: Pick<Contact, "name" | "phone">): string | null {
+  const phone = formatPhone(contact.phone);
+  if (!phone) return null;
+  return contactLabel(contact) === phone ? null : phone;
+}
+
+/**
+ * A letra do avatar.
+ *
+ * Com o telefone virando título, `charAt(0)` passou a devolver "(" — todo
+ * contato sem nome ficava com um parêntese no círculo. Sem letra no nome, o
+ * primeiro dígito do número serve melhor: distingue os contatos entre si.
+ */
+export function contactInitial(contact: Pick<Contact, "name" | "phone">): string {
+  const letra = (contact.name ?? "").match(/\p{L}/u);
+  if (letra) return letra[0].toUpperCase();
+  const digito = (contact.phone ?? contact.name ?? "").replace(/\D/g, "");
+  return digito ? digito.slice(-4, -3) || digito[0] : "?";
+}
+
 /** Recortes de contato que viram lista de disparo. */
 export type ContactFilter = "all" | "closing" | "waiting" | "cold" | "no_reply";
 

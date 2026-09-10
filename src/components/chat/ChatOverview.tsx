@@ -2,7 +2,10 @@ import { useMemo } from "react";
 import { BadgeCheck, CalendarDays, Clock, Hand, HandCoins, MessageSquareReply } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useContactsQuery, useAppointmentsQuery } from "@/hooks/queries";
-import { matchesContactFilter, type Appointment, type Contact } from "@/lib/types";
+import {
+  contactInitial, contactLabel, contactSubtitle, matchesContactFilter,
+  type Appointment, type Contact,
+} from "@/lib/types";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
@@ -206,7 +209,7 @@ function Secao({
               : c.closing_signal_at;
             const legenda =
               modo === "espera"
-                ? c.phone ?? "sem telefone"
+                ? contactSubtitle(c) ?? "sem telefone"
                 : modo === "humano"
                   ? c.needs_human_reason ?? "Pediu para falar com uma pessoa"
                   : `${c.closing_signal_label ?? ""}${
@@ -222,11 +225,11 @@ function Secao({
               )}
             >
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-background/70 text-xs font-semibold">
-                {c.name.trim().charAt(0).toUpperCase() || "?"}
+                {contactInitial(c)}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="flex items-baseline justify-between gap-2">
-                  <span className="truncate text-sm font-medium">{c.name}</span>
+                  <span className="truncate text-sm font-medium">{contactLabel(c)}</span>
                   <span className="tabular shrink-0 text-[11px] text-muted-foreground">
                     {quando && haQuantoTempo(quando)}
                   </span>

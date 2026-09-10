@@ -3,7 +3,7 @@ import { Kanban, Phone, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useContactsQuery, useUpdateContactMutation, usePipelineStagesQuery } from "@/hooks/queries";
-import { getToneClasses, type Contact } from "@/lib/types";
+import { contactInitial, contactLabel, contactSubtitle, getToneClasses, type Contact } from "@/lib/types";
 import ContactDetailModal from "@/components/contacts/ContactDetailModal";
 import StagesDialog from "@/components/pipeline/StagesDialog";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -95,7 +95,7 @@ export default function Pipeline() {
             <div
               key={stage.id}
               className={cn(
-                "flex min-h-[420px] w-[272px] flex-shrink-0 flex-col rounded-xl border bg-muted/40 transition-colors",
+                "flex min-h-[420px] w-[280px] flex-shrink-0 flex-col rounded-2xl border border-border/60 bg-muted/50 transition-colors",
                 isDropTarget && "border-primary/60 bg-accent/60 ring-2 ring-primary/20",
               )}
               onDragOver={(e) => {
@@ -110,14 +110,14 @@ export default function Pipeline() {
                   <span className={cn("h-2 w-2 shrink-0 rounded-full", tone.dot)} />
                   <span className="truncate text-sm font-semibold">{stage.name}</span>
                 </span>
-                <span className="tabular shrink-0 rounded-full bg-background px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                <span className="tabular shrink-0 rounded-md bg-card px-1.5 py-0.5 text-[11px] font-semibold text-muted-foreground ring-1 ring-border/60">
                   {stageContacts.length}
                 </span>
               </div>
 
               <div className="flex-1 space-y-2 px-2 pb-2">
                 {stageContacts.length === 0 ? (
-                  <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-border/70 px-3 text-center text-xs text-muted-foreground">
+                  <div className="flex h-24 items-center justify-center rounded-xl border border-dashed border-border px-3 text-center text-xs text-muted-foreground">
                     {isDropTarget ? "Solte aqui" : "Nenhum contato"}
                   </div>
                 ) : (
@@ -136,20 +136,20 @@ export default function Pipeline() {
                       }}
                       onClick={() => setSelected(contact)}
                       className={cn(
-                        "group cursor-grab rounded-lg border border-border/70 bg-card p-3 text-sm shadow-card transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-card-hover active:cursor-grabbing",
+                        "group cursor-grab rounded-xl border border-border/60 bg-card p-3 text-sm shadow-card transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-card-hover active:cursor-grabbing",
                         draggingId === contact.id && "rotate-1 opacity-40",
                       )}
                     >
                       <div className="flex items-center gap-2.5">
                         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                          {contact.name.trim().charAt(0).toUpperCase() || "?"}
+                          {contactInitial(contact)}
                         </span>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium leading-tight">{contact.name}</p>
-                          {contact.phone && (
+                          <p className="truncate font-medium leading-tight">{contactLabel(contact)}</p>
+                          {contactSubtitle(contact) && (
                             <p className="tabular mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
                               <Phone className="h-3 w-3 shrink-0" />
-                              <span className="truncate">{contact.phone}</span>
+                              <span className="truncate">{contactSubtitle(contact)}</span>
                             </p>
                           )}
                         </div>

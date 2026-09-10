@@ -21,8 +21,8 @@ import {
   useCompanyTeamQuery,
 } from "@/hooks/queries";
 import {
-  getStageLabel, getStageTone, getToneClasses, LIBRARY_KINDS, teamLabel,
-  type Contact, type LibraryItem,
+  contactInitial, contactLabel, contactSubtitle, getStageLabel, getStageTone, getToneClasses,
+  LIBRARY_KINDS, teamLabel, type Contact, type LibraryItem,
 } from "@/lib/types";
 import SendTemplateDialog from "@/components/chat/SendTemplateDialog";
 import ContactPanel from "@/components/chat/ContactPanel";
@@ -91,7 +91,7 @@ export default function Chat() {
   const orderedContacts = useMemo(() => {
     const term = search.trim().toLowerCase();
     return contacts
-      .filter((c) => !term || c.name.toLowerCase().includes(term) || c.phone?.includes(term))
+      .filter((c) => !term || contactLabel(c).toLowerCase().includes(term) || c.phone?.includes(term))
       .filter((c) => {
         if (fila === "meus") return c.assigned_to === user?.id;
         if (fila === "livres") return !c.assigned_to;
@@ -355,7 +355,7 @@ export default function Chat() {
                             : "bg-primary/10 text-primary",
                         )}
                       >
-                        {contact.name.trim().charAt(0).toUpperCase() || "?"}
+                        {contactInitial(contact)}
                       </span>
                       {/* Mesma cor da etiqueta do cabeçalho: dá pra varrer a lista
                           sem abrir cada conversa. */}
@@ -375,7 +375,7 @@ export default function Chat() {
                             isUnread ? "font-bold" : "font-medium",
                           )}
                         >
-                          {contact.name}
+                          {contactLabel(contact)}
                         </span>
                         <span className="flex shrink-0 items-center gap-1.5">
                           {last && (
@@ -424,7 +424,7 @@ export default function Chat() {
           <ChatOverview onSelect={(contactId) => setSearchParams({ contato: contactId })} />
         ) : (
           <>
-            <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b px-4 py-3">
               <div className="flex min-w-0 items-center gap-2.5">
                 <button
                   onClick={() => setSearchParams({})}
@@ -434,13 +434,14 @@ export default function Chat() {
                   <ArrowLeft className="h-5 w-5" />
                 </button>
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-                  {selectedContact.name.trim().charAt(0).toUpperCase() || "?"}
+                  {contactInitial(selectedContact)}
                 </span>
                 <div className="min-w-0">
-                  <p className="truncate font-semibold leading-tight">{selectedContact.name}</p>
-                  <div className="mt-1 flex min-w-0 items-center gap-2">
+                  <p className="truncate font-semibold leading-tight">{contactLabel(selectedContact)}</p>
+                  <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="tabular truncate text-xs text-muted-foreground">
-                      {selectedContact.phone ?? "Sem telefone"}
+                      {contactSubtitle(selectedContact) ??
+                        (selectedContact.phone ? "" : "Sem telefone")}
                     </span>
                     <Select value={selectedContact.stage} onValueChange={(v) => void handleStageChange(v)}>
                       <SelectTrigger
