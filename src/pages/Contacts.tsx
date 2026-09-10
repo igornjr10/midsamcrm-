@@ -1,14 +1,18 @@
 import { useMemo, useState } from "react";
-import { BadgeCheck, Plus, Search, SlidersHorizontal, Users } from "lucide-react";
+import { BadgeCheck, Plus, Search, SlidersHorizontal, Tag, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import { useContactsQuery, useCreateContactMutation, usePipelineStagesQuery } from "@/hooks/queries";
+import {
+  useContactsQuery, useCreateContactMutation, usePipelineStagesQuery, useContactTagsQuery,
+} from "@/hooks/queries";
 import {
   CONTACT_FILTERS, getStageLabel, getStageTone, matchesContactFilter,
   type Contact, type ContactFilter,
 } from "@/lib/types";
 import ContactDetailModal from "@/components/contacts/ContactDetailModal";
 import ContactFieldsDialog from "@/components/contacts/ContactFieldsDialog";
+import TagsDialog from "@/components/contacts/TagsDialog";
+import { TagBadge } from "@/components/contacts/TagPicker";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,12 +46,16 @@ export default function Contacts() {
   const [selected, setSelected] = useState<Contact | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [fieldsOpen, setFieldsOpen] = useState(false);
+  const [tagsOpen, setTagsOpen] = useState(false);
+  const [tagFilter, setTagFilter] = useState("all");
+  const { data: tagCatalog = [] } = useContactTagsQuery(company?.id);
   const [form, setForm] = useState({ name: "", phone: "", email: "" });
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return contacts.filter((c) => {
       if (stageFilter !== "all" && c.stage !== stageFilter) return false;
+      if (tagFilter !== "all" && !c.tags?.includes(tagFilter)) return false;
       if (!matchesContactFilter(c, smartFilter)) return false;
       if (!term) return true;
       return (
@@ -56,7 +64,7 @@ export default function Contacts() {
         c.email?.toLowerCase().includes(term)
       );
     });
-  }, [contacts, search, stageFilter, smartFilter]);
+  }, [contacts, search, stageFilter, tagFilter, smartFilter]);
 
   const smartFilterHint = CONTACT_FILTERS.find((f) => f.id === smartFilter)?.hint;
 
@@ -93,6 +101,10 @@ export default function Contacts() {
         }
         actions={
           <>
+            <Button variant="outline" onClick={() => setTagsOpen(true)}>
+              <Tag />
+              Etiquetas
+            </Button>
             <Button variant="outline" onClick={() => setFieldsOpen(true)}>
               <SlidersHorizontal />
               Campos
@@ -155,6 +167,21 @@ export default function Contacts() {
             ))}
           </SelectContent>
         </Select>
+        {tagCatalog.length > 0 && (
+          <Select value={tagFilter} onValueChange={setTagFilter}>
+            <SelectTrigger className="sm:w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas as etiquetas</SelectItem>
+              {tagCatalog.map((t) => (
+                <SelectItem key={t.id} value={t.name}>
+                  {t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Select value={smartFilter} onValueChange={(v) => setSmartFilter(v as ContactFilter)}>
           <SelectTrigger className="sm:w-64">
             <SelectValue />
@@ -218,6 +245,14 @@ export default function Contacts() {
                           {contact.name.trim().charAt(0).toUpperCase() || "?"}
                         </span>
                         <span className="font-medium">{contact.name}</span>
+                        {contact.tags?.slice(0, 3).map((name) => (
+                          <TagBadge
+                            key={name}
+                            name={name}
+                            tone={tagCatalog.find((t) => t.name === name)?.tone}
+                            className="shrink-0"
+                          />
+                        ))}
                         {contact.closing_signal_at && (
                           <Badge
                             variant="outline"
@@ -252,6 +287,7 @@ export default function Contacts() {
       </div>
 
       <ContactFieldsDialog open={fieldsOpen} onOpenChange={setFieldsOpen} />
+      <TagsDialog open={tagsOpen} onOpenChange={setTagsOpen} />
       <ContactDetailModal contact={selected} open={!!selected} onClose={() => setSelected(null)} />
     </div>
   );

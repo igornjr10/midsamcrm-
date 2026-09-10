@@ -11,6 +11,7 @@ import {
 } from "@/hooks/queries";
 import { getStageLabel, getStageTone, type Contact } from "@/lib/types";
 import { formatFieldValue } from "@/lib/fields";
+import TagPicker from "@/components/contacts/TagPicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -169,6 +170,22 @@ export default function ContactPanel({ contact }: { contact: Contact }) {
             <Badge variant="outline" className={cn(getStageTone(stages, contact.stage).badge)}>
               {getStageLabel(stages, contact.stage)}
             </Badge>
+          </div>
+
+          {/* ── Etiquetas ──────────────────────────────────────────────────── */}
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Etiquetas
+            </p>
+            <TagPicker
+              compact
+              value={contact.tags ?? []}
+              onChange={(tags) => {
+                if (!company) return;
+                void updateContact.mutateAsync({ id: contact.id, company_id: company.id, tags })
+                  .catch((err: unknown) => toast.error(err instanceof Error ? err.message : "Erro ao salvar etiquetas"));
+              }}
+            />
           </div>
 
           {/* ── Dados do negócio ───────────────────────────────────────────── */}

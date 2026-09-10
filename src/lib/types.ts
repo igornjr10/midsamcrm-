@@ -49,6 +49,33 @@ export interface Contact {
   nps_answered_at: string | null;
   /** Campos personalizados (contact_fields), indexados pela chave. */
   fields: Record<string, ContactFieldValue>;
+  /** Nomes das etiquetas (contact_tags). */
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+/** Etiqueta do catálogo da empresa: VIP, Atacado, Sinistro... */
+export interface ContactTag {
+  id: string;
+  company_id: string;
+  name: string;
+  tone: StageTone;
+  /** Aplicada pela IA, pausa a conversa e chama uma pessoa. */
+  escalate: boolean;
+  position: number;
+  created_at: string;
+}
+
+/** Resposta pronta do chat: "/" + atalho. */
+export interface QuickReply {
+  id: string;
+  company_id: string;
+  shortcut: string;
+  title: string;
+  /** Aceita {{nome}} e {{primeiro_nome}}. */
+  content: string;
+  position: number;
   created_at: string;
   updated_at: string;
 }

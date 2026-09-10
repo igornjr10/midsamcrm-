@@ -16,6 +16,7 @@ import {
 } from "@/hooks/queries";
 import { getStageLabel, getStageTone, type Contact, type ContactFieldValue } from "@/lib/types";
 import ContactFieldsForm from "@/components/contacts/ContactFieldsForm";
+import TagPicker from "@/components/contacts/TagPicker";
 import { cn } from "@/lib/utils";
 
 interface ContactDetailModalProps {
@@ -35,6 +36,7 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
 
   const [name, setName] = useState("");
   const [fieldValues, setFieldValues] = useState<Record<string, ContactFieldValue>>({});
+  const [tags, setTags] = useState<string[]>([]);
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [birthDate, setBirthDate] = useState("");
@@ -52,6 +54,7 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
     setStage(contact.stage);
     setNotes(contact.notes ?? "");
     setFieldValues({ ...(contact.fields ?? {}) });
+    setTags([...(contact.tags ?? [])]);
     setApptTitle("");
     setApptStartsAt("");
   }, [contact]);
@@ -70,6 +73,7 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
         stage,
         notes: notes.trim() || null,
         fields: fieldValues,
+        tags,
       });
       toast.success("Contato salvo");
       onClose();
@@ -177,6 +181,10 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
               {/* Só o dia e o mês são usados: é o gatilho da régua de aniversário. */}
               <p className="text-xs text-muted-foreground">Usada pela régua de aniversário</p>
             </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Etiquetas</Label>
+            <TagPicker value={tags} onChange={setTags} />
           </div>
           <div className="space-y-1.5">
             <Label>Etapa do funil</Label>

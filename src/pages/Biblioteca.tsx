@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { FileText, Library, Trash2, Upload } from "lucide-react";
+import { FileText, Library, Plus, Trash2, Upload, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -10,6 +10,7 @@ import {
 } from "@/hooks/queries";
 import { LIBRARY_KINDS, type LibraryItem, type LibraryKind } from "@/lib/types";
 import { PageHeader } from "@/components/layout/PageHeader";
+import QuickRepliesPanel from "@/components/library/QuickRepliesPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,7 +38,8 @@ export default function Biblioteca() {
   const updateItem = useUpdateLibraryItemMutation();
   const deleteItem = useDeleteLibraryItemMutation();
 
-  const [tab, setTab] = useState<LibraryKind>("cardapio");
+  const [tab, setTab] = useState<LibraryKind | "respostas">("cardapio");
+  const [createReply, setCreateReply] = useState(0);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [form, setForm] = useState({ title: "", description: "" });
   const [file, setFile] = useState<File | null>(null);
@@ -69,7 +71,8 @@ export default function Biblioteca() {
       await upload.mutateAsync({
         company_id: company.id,
         user_id: user.id,
-        kind: tab,
+        // Na aba de respostas o botão de arquivo não aparece; se aparecer, cai em Outros.
+        kind: tab === "respostas" ? "outro" : tab,
         title: form.title.trim() || file.name,
         description: form.description.trim() || null,
         file,
@@ -96,16 +99,23 @@ export default function Biblioteca() {
       <PageHeader
         icon={Library}
         title="Biblioteca"
-        description="Cardápios, orçamentos e material de apoio que a IA e a equipe enviam pelo WhatsApp"
+        description="Cardápios, orçamentos, material de apoio e respostas prontas que a IA e a equipe enviam pelo WhatsApp"
         actions={
-          <Button onClick={openUpload}>
-            <Upload />
-            Adicionar arquivo
-          </Button>
+          tab === "respostas" ? (
+            <Button onClick={() => setCreateReply((n) => n + 1)}>
+              <Plus />
+              Nova resposta
+            </Button>
+          ) : (
+            <Button onClick={openUpload}>
+              <Upload />
+              Adicionar arquivo
+            </Button>
+          )
         }
       />
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as LibraryKind)}>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as LibraryKind | "respostas")}>
         <TabsList>
           {LIBRARY_KINDS.map((kind) => (
             <TabsTrigger key={kind.id} value={kind.id}>
@@ -115,6 +125,10 @@ export default function Biblioteca() {
               </span>
             </TabsTrigger>
           ))}
+          <TabsTrigger value="respostas">
+            <Zap />
+            Respostas rápidas
+          </TabsTrigger>
         </TabsList>
 
         {LIBRARY_KINDS.map((kind) => {
@@ -191,6 +205,10 @@ export default function Biblioteca() {
             </TabsContent>
           );
         })}
+
+        <TabsContent value="respostas" className="mt-4">
+          <QuickRepliesPanel createSignal={createReply} />
+        </TabsContent>
       </Tabs>
 
       <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>

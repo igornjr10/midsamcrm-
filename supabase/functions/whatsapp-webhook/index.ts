@@ -888,6 +888,49 @@ function buildAtualizarDadosTool(defs: ContactFieldDef[]) {
   };
 }
 
+type TagDef = { name: string; escalate: boolean };
+type QuickReplyRow = { title: string; content: string };
+
+function buildMarcarEtiquetaTool(tags: TagDef[]) {
+  return {
+    type: "function",
+    function: {
+      name: "marcar_etiqueta",
+      description:
+        "Marca o lead com uma etiqueta da empresa quando a conversa deixar claro que ela se aplica " +
+        "(ex.: falou de sinistro, quer comprar em atacado, reclamou). Só as etiquetas listadas.",
+      parameters: {
+        type: "object",
+        properties: {
+          etiqueta: { type: "string", enum: tags.map((t) => t.name) },
+          motivo: { type: "string", description: "Em poucas palavras, o que na conversa justificou." },
+        },
+        required: ["etiqueta"],
+      },
+    },
+  };
+}
+
+function tagsBrief(tags: TagDef[], current: string[]): string {
+  if (tags.length === 0) return "";
+  const atuais = current.length > 0 ? current.join(", ") : "nenhuma";
+  const escalam = tags.filter((t) => t.escalate).map((t) => t.name);
+  return (
+    `\n\nEtiquetas deste lead: ${atuais}. Etiquetas disponíveis: ${tags.map((t) => t.name).join(", ")}.` +
+    (escalam.length > 0
+      ? ` Marcar ${escalam.join(" ou ")} chama uma pessoa da equipe na hora — use quando for o caso.`
+      : "")
+  );
+}
+
+function quickRepliesBrief(replies: QuickReplyRow[]): string {
+  if (replies.length === 0) return "";
+  return (
+    "\n\nInformações oficiais da empresa (use estas respostas, com suas palavras, quando o lead perguntar):\n" +
+    replies.map((r) => `- ${r.title}: ${r.content.replace(/\{\{[^}]*\}\}/g, "").trim()}`).join("\n")
+  );
+}
+
 function contactBrief(defs: ContactFieldDef[], values: Record<string, unknown>): string {
   if (defs.length === 0) return "";
   const linhas = defs.map((d) => {
@@ -1033,16 +1076,23 @@ async function maybeAiReply(
 
   // Campos personalizados: o que a empresa quer saber de cada lead. Entram no
   // prompt e viram uma ferramenta para a IA preencher o que descobrir.
-  const [{ data: fieldDefsRaw }, { data: contactRow }] = await Promise.all([
-    supabase
-      .from("contact_fields")
-      .select("key, label, type, options")
-      .eq("company_id", config.company_id)
-      .order("position"),
-    supabase.from("contacts").select("fields").eq("id", contact.id).maybeSingle(),
-  ]);
+  const [{ data: fieldDefsRaw }, { data: contactRow }, { data: tagsRaw }, { data: repliesRaw }] =
+    await Promise.all([
+      supabase
+        .from("contact_fields")
+        .select("key, label, type, options")
+        .eq("company_id", config.company_id)
+        .order("position"),
+      supabase.from("contacts").select("fields, tags").eq("id", contact.id).maybeSingle(),
+      supabase.from("contact_tags").select("name, escalate").eq("company_id", config.company_id).order("position"),
+      supabase.from("quick_replies").select("title, content").eq("company_id", config.company_id).order("position"),
+    ]);
   const fieldDefs = (fieldDefsRaw ?? []) as ContactFieldDef[];
-  const fieldValues = ((contactRow as { fields?: Record<string, unknown> } | null)?.fields ?? {});
+  const contactData = contactRow as { fields?: Record<string, unknown>; tags?: string[] } | null;
+  const fieldValues = contactData?.fields ?? {};
+  const contactTags: string[] = [...(contactData?.tags ?? [])];
+  const tagDefs = (tagsRaw ?? []) as TagDef[];
+  const quickReplies = (repliesRaw ?? []) as QuickReplyRow[];
 
   const libraryBrief = library.length > 0
     ? "\n\nArquivos que você pode enviar (use a ferramenta enviar_arquivo com o id):\n" +
@@ -1066,7 +1116,9 @@ async function maybeAiReply(
         "Se ele pedir para falar com uma pessoa, reclamar, ou perguntar algo que você não pode " +
         "responder com segurança, chame chamar_humano em vez de improvisar." +
         libraryBrief +
-        contactBrief(fieldDefs, fieldValues),
+        quickRepliesBrief(quickReplies) +
+        contactBrief(fieldDefs, fieldValues) +
+        tagsBrief(tagDefs, contactTags),
     },
     ...((history ?? []) as Array<{ sender: string; content: string }>)
       .slice()
@@ -1081,6 +1133,7 @@ async function maybeAiReply(
     CONSULTAR_DATA_TOOL, CONSULTAR_AGENDA_TOOL, REGISTRAR_AGENDAMENTO_TOOL, CHAMAR_HUMANO_TOOL,
   ];
   if (fieldDefs.length > 0) tools.push(buildAtualizarDadosTool(fieldDefs));
+  if (tagDefs.length > 0) tools.push(buildMarcarEtiquetaTool(tagDefs));
   if (library.length > 0) {
     tools.push({
         type: "function",
@@ -1270,6 +1323,41 @@ async function maybeAiReply(
             .update({ fields: fieldValues })
             .eq("id", contact.id);
           result = error ? { erro: error.message } : { ok: true, gravado: Object.keys(patch) };
+        }
+        messages.push({
+          role: "assistant",
+          content: choice.content ?? null,
+          tool_calls: choice.tool_calls,
+        });
+        messages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: JSON.stringify(result),
+        });
+        continue;
+      }
+
+      if (call?.function?.name === "marcar_etiqueta") {
+        const args = JSON.parse(call.function.arguments || "{}") as { etiqueta?: string; motivo?: string };
+        const def = tagDefs.find((t) => t.name === args.etiqueta);
+        let result: Record<string, unknown>;
+        if (!def) {
+          result = { erro: "etiqueta desconhecida" };
+        } else {
+          if (!contactTags.includes(def.name)) {
+            contactTags.push(def.name);
+            const { error } = await supabase
+              .from("contacts")
+              .update({ tags: contactTags })
+              .eq("id", contact.id);
+            if (error) console.error("marcar_etiqueta falhou", error.message);
+          }
+          result = { ok: true, etiqueta: def.name };
+          // Etiqueta que escala: a conversa vira de gente agora.
+          if (def.escalate) {
+            const motivo = `Etiqueta "${def.name}"${args.motivo ? `: ${args.motivo}` : ""}`;
+            Object.assign(result, await registerHumanHandoff(supabase, contact.id, motivo));
+          }
         }
         messages.push({
           role: "assistant",

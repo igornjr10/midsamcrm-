@@ -19,6 +19,7 @@ import {
   useUnreadContacts,
   useMarkConversationReadMutation,
   useCompanyTeamQuery,
+  useContactTagsQuery,
 } from "@/hooks/queries";
 import {
   contactInitial, contactLabel, contactSubtitle, getStageLabel, getStageTone, getToneClasses,
@@ -26,6 +27,8 @@ import {
 } from "@/lib/types";
 import SendTemplateDialog from "@/components/chat/SendTemplateDialog";
 import ContactPanel from "@/components/chat/ContactPanel";
+import QuickReplyComposer from "@/components/chat/QuickReplyComposer";
+import { TagBadge } from "@/components/contacts/TagPicker";
 import ChatOverview from "@/components/chat/ChatOverview";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -60,6 +63,7 @@ export default function Chat() {
   const { unread } = useUnreadContacts(company?.id, user?.id);
   const markRead = useMarkConversationReadMutation();
   const { data: team = [] } = useCompanyTeamQuery(company?.id);
+  const { data: tagCatalog = [] } = useContactTagsQuery(company?.id);
 
   const activeLibrary = useMemo(() => library.filter((i) => i.active), [library]);
 
@@ -394,6 +398,18 @@ export default function Chat() {
                       >
                         {last ? last.content : "Sem mensagens"}
                       </span>
+                      {contact.tags?.length > 0 && (
+                        <span className="mt-1 flex flex-wrap gap-1">
+                          {contact.tags.slice(0, 2).map((name) => (
+                            <TagBadge
+                              key={name}
+                              name={name}
+                              tone={tagCatalog.find((t) => t.name === name)?.tone}
+                              className="px-1.5 py-0 text-[10px] leading-4"
+                            />
+                          ))}
+                        </span>
+                      )}
                       {/* O lead pediu uma pessoa e a IA se calou esperando. É o
                           item mais urgente da lista, por isso aparece aqui e
                           não só dentro da conversa. */}
@@ -675,12 +691,12 @@ export default function Chat() {
               >
                 <Paperclip />
               </Button>
-              <Input
-                placeholder="Digite uma mensagem..."
+              <QuickReplyComposer
                 value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && void handleSend()}
+                onChange={setNewMessage}
+                onSend={() => void handleSend()}
                 disabled={sending}
+                contact={selectedContact}
               />
               <Button
                 size="icon"

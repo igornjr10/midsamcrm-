@@ -103,6 +103,8 @@ export default function ModulesDialog({
       if (result?.fields) partes.push(`${result.fields} ${result.fields === 1 ? "campo" : "campos"}`);
       if (result?.kinds) partes.push(`${result.kinds} ${result.kinds === 1 ? "tipo de compromisso" : "tipos de compromisso"}`);
       if (result?.rules) partes.push(`${result.rules} ${result.rules === 1 ? "régua sugerida" : "réguas sugeridas"}`);
+      if (result?.tags) partes.push(`${result.tags} ${result.tags === 1 ? "etiqueta" : "etiquetas"}`);
+      if (result?.replies) partes.push(`${result.replies} ${result.replies === 1 ? "resposta rápida" : "respostas rápidas"}`);
       toast.success(
         partes.length > 0
           ? `Nicho atualizado · ${partes.join(", ")} do modelo adicionados.`
