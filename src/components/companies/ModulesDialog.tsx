@@ -157,51 +157,48 @@ export default function ModulesDialog({
             </div>
           ) : (
             <div className="space-y-1">
-              {features.map((f) => {
+              <Label>Módulos</Label>
+              {/* Os core viram uma linha só: três cards dizendo "não dá para
+                  mexer" empurravam para baixo justamente o que se decide. */}
+              <p className="flex items-center gap-1.5 pb-1 text-xs text-muted-foreground">
+                <Lock className="h-3 w-3 shrink-0" />
+                {features.filter((f) => f.core).map((f) => f.label).join(", ")} sempre ativos
+              </p>
+
+              {features.filter((f) => !f.core).map((f) => {
                 const override = overrides?.get(f.feature_key);
                 const isException = override !== undefined;
                 return (
-                  <div
+                  <label
                     key={f.feature_key}
-                    className="flex items-start gap-3 rounded-lg border p-3"
+                    className="flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 transition-colors hover:bg-accent/40"
                   >
                     <Checkbox
-                      className="mt-0.5"
                       checked={f.enabled}
-                      disabled={f.core || setFeature.isPending}
+                      disabled={setFeature.isPending}
                       onCheckedChange={(v) => void handleToggle(f.feature_key, v === true)}
                     />
-                    <div className="min-w-0 flex-1">
-                      <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                        {f.label}
-                        {f.core && (
-                          <Badge variant="outline" className="gap-1">
-                            <Lock className="h-3 w-3" />
-                            Sempre ativo
-                          </Badge>
-                        )}
-                        {isException && !f.core && (
-                          <Badge variant="secondary">
-                            Exceção: {override ? "liberado" : "removido"}
-                          </Badge>
-                        )}
-                      </p>
-                      {f.route && (
-                        <p className="text-xs text-muted-foreground">{f.route}</p>
-                      )}
-                    </div>
-                    {isException && !f.core && (
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        title="Voltar ao padrão do nicho"
-                        onClick={() => void handleReset(f.feature_key)}
-                        disabled={clearFeature.isPending}
-                      >
-                        <RotateCcw className="h-4 w-4" />
-                      </Button>
+                    <span className="min-w-0 flex-1 text-sm font-medium">{f.label}</span>
+                    {isException && (
+                      <>
+                        <Badge variant="secondary" className="shrink-0">
+                          {override ? "liberado à parte" : "removido"}
+                        </Badge>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          title="Voltar ao padrão do nicho"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            void handleReset(f.feature_key);
+                          }}
+                          disabled={clearFeature.isPending}
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                        </Button>
+                      </>
                     )}
-                  </div>
+                  </label>
                 );
               })}
             </div>
@@ -261,8 +258,8 @@ export default function ModulesDialog({
           </div>
 
           <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
-            Pipeline, Contatos e Chat não podem ser desligados — são o produto. Esconder um módulo
-            tira ele do menu; quem recusa de verdade o acesso são as regras do banco e as functions.
+            Esconder um módulo tira ele do menu; quem recusa de verdade o acesso são as regras do
+            banco e as edge functions.
           </p>
         </div>
       </DialogContent>

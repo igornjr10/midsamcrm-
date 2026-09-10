@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bot, CalendarClock, HeartHandshake, History, Loader2, Sparkles } from "lucide-react";
+import { Bot, CalendarClock, HeartHandshake, History, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useAiConfigQuery, useSaveAiConfigMutation } from "@/hooks/queries";
@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SkeletonForm } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
@@ -147,9 +148,7 @@ export default function SdrIa() {
             </CardHeader>
             <CardContent className="space-y-4">
               {isPending ? (
-                <div className="flex justify-center py-6">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                </div>
+                <SkeletonForm fields={4} />
               ) : (
                 <>
                   <label

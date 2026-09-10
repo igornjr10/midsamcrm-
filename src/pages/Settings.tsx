@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SkeletonForm } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/layout/PageHeader";
 
 const DATAFY_API_BASE = "https://cloud.datafyapi.com.br/v1";
@@ -604,9 +605,7 @@ export default function Settings() {
         </CardHeader>
         <CardContent className="space-y-4">
           {isPending ? (
-            <div className="flex justify-center py-6">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
+            <SkeletonForm fields={4} />
           ) : (
             <>
               <div className="space-y-1.5">

@@ -103,10 +103,10 @@ export default function RelationshipSettings() {
     setDraft(next);
   }, [rules]);
 
-  const handleSave = async (kind: RelationshipKind) => {
+  const handleSave = async (kind: RelationshipKind, override?: typeof draft[string]) => {
     if (!company) return;
     const rule = RULES.find((r) => r.kind === kind)!;
-    const d = draft[kind];
+    const d = override ?? draft[kind];
     if (!d) return;
     if (d.enabled && !d.message.trim()) {
       toast.error("Escreva a mensagem antes de ligar a régua.");
@@ -148,12 +148,25 @@ export default function RelationshipSettings() {
               <label className="flex cursor-pointer items-center gap-2 text-sm">
                 <Checkbox
                   checked={d.enabled}
-                  onCheckedChange={(v) =>
-                    setDraft((p) => ({ ...p, [rule.kind]: { ...d, enabled: v === true } }))
-                  }
+                  onCheckedChange={(v) => {
+                    const ligando = v === true;
+                    setDraft((p) => ({ ...p, [rule.kind]: { ...d, enabled: ligando } }));
+                    // Desligar é decisão completa: salva na hora, sem obrigar a
+                    // rolar até um botão no fim de um formulário que a pessoa
+                    // nem queria abrir.
+                    if (!ligando && rules?.get(rule.kind)?.enabled) {
+                      void handleSave(rule.kind, { ...d, enabled: false });
+                    }
+                  }}
                 />
                 Ligar esta régua
               </label>
+
+              {/* Régua desligada é só o interruptor: manter o formulário inteiro
+                  aberto fazia cada uma ocupar uma tela, e três réguas viravam
+                  três rolagens para configurar uma. */}
+              {d.enabled && (
+                <>
 
               <div className="space-y-1.5">
                 <Label>Mensagem</Label>
@@ -188,6 +201,7 @@ export default function RelationshipSettings() {
                     <p className="text-xs text-muted-foreground">{rule.campo.hint}</p>
                   </div>
                 )}
+                {rule.kind !== "aniversario" && (
                 <div className="space-y-1.5">
                   <Label>Não repetir por (dias)</Label>
                   <Input
@@ -205,11 +219,14 @@ export default function RelationshipSettings() {
                     Impede o mesmo contato de receber esta régua de novo cedo demais
                   </p>
                 </div>
+                )}
               </div>
 
               <Button onClick={() => void handleSave(rule.kind)} disabled={save.isPending}>
                 {save.isPending ? "Salvando..." : "Salvar"}
               </Button>
+                </>
+              )}
             </CardContent>
           </Card>
         );
