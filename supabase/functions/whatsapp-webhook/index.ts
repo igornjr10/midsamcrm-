@@ -13,6 +13,7 @@ import {
 import * as evo from "../_shared/evolution.ts";
 import * as uaz from "../_shared/uazapi.ts";
 import * as owa from "../_shared/openwa.ts";
+import { hasFeature } from "../_shared/features.ts";
 
 // Cliente com service role. Sem os genéricos explícitos o ReturnType resolve
 // para os defaults (never) e não aceita o cliente real.
@@ -891,6 +892,10 @@ async function maybeAiReply(
 ): Promise<void> {
   if (contact.ai_paused) return;
   if (!aiConfig?.enabled) return;
+
+  // SDR IA é módulo do plano. A checagem vem depois de `enabled` de propósito:
+  // empresa com a IA desligada não gasta uma consulta a mais por mensagem.
+  if (!(await hasFeature(supabase, config.company_id, "sdr"))) return;
 
   // Negócio já fechado (Ganho ou Perdido): a etapa vale como resposta mesmo sem
   // ninguém do time ter escrito — é o caso do funil automático da 0024, que

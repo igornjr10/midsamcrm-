@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, LogIn, Pencil, Plus } from "lucide-react";
+import { Building2, LogIn, Pencil, Plus, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -14,6 +14,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/layout/PageHeader";
+import ModulesDialog from "@/components/companies/ModulesDialog";
 
 interface CompanyRow extends Company {
   member_count: number;
@@ -40,6 +41,7 @@ export default function Companies() {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ company_name: "", email: "", password: "", full_name: "" });
   const [editing, setEditing] = useState<CompanyRow | null>(null);
+  const [modulesFor, setModulesFor] = useState<CompanyRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [editForm, setEditForm] = useState({ company_name: "", email: "" });
 
@@ -276,6 +278,15 @@ export default function Companies() {
                           <Pencil />
                           Editar
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setModulesFor(c)}
+                          aria-label={`Módulos de ${c.name}`}
+                        >
+                          <SlidersHorizontal />
+                          Módulos
+                        </Button>
                         {activeCompany?.id === c.id ? (
                           <Badge variant="secondary">Em uso</Badge>
                         ) : (
@@ -332,6 +343,12 @@ export default function Companies() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ModulesDialog
+        company={modulesFor}
+        open={!!modulesFor}
+        onOpenChange={(open) => !open && setModulesFor(null)}
+      />
     </div>
   );
 }

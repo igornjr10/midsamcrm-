@@ -192,6 +192,24 @@ export interface AiConfig {
   updated_at: string;
 }
 
+/** Nicho de mercado da empresa — define o pacote de módulos que ela recebe. */
+export interface Niche {
+  key: string;
+  name: string;
+  description: string | null;
+  position: number;
+}
+
+/** Um módulo do produto, já resolvido para uma empresa (ver company_feature_set). */
+export interface CompanyFeature {
+  feature_key: string;
+  label: string;
+  route: string | null;
+  /** Core não pode ser desligado: é o produto (Pipeline, Contatos, Chat). */
+  core: boolean;
+  enabled: boolean;
+}
+
 /** Membro da empresa que pode ser responsável por uma conversa. */
 export interface CompanyTeamMember {
   user_id: string;
@@ -311,6 +329,8 @@ export interface CampaignTarget {
 export interface Company {
   id: string;
   name: string;
+  /** Nicho: define o pacote de módulos. Null = tudo liberado. */
+  niche_key: string | null;
   created_at: string;
   updated_at: string;
 }

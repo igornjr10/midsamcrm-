@@ -20,6 +20,7 @@ import {
 import * as evo from "../_shared/evolution.ts";
 import * as uaz from "../_shared/uazapi.ts";
 import * as owa from "../_shared/openwa.ts";
+import { hasFeature, featureDeniedMessage } from "../_shared/features.ts";
 
 /** Mesma convenção do follow-up de texto (sdr-followup/renderMessage). */
 function renderPlaceholders(template: string, contactName: string | null): string {
@@ -90,6 +91,12 @@ Deno.serve(async (req: Request) => {
       body.company_id as string | undefined,
     );
     if (!companyId) return json({ error: companyError }, 403);
+
+    // Disparos é módulo vendido à parte. Esconder o menu no front não impede
+    // ninguém de chamar esta function direto.
+    if (!(await hasFeature(supabase, companyId, "disparos"))) {
+      return json({ error: featureDeniedMessage("Disparos") }, 403);
+    }
 
     // ── create ───────────────────────────────────────────────────────────────
     if (action === "create") {

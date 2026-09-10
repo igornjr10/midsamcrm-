@@ -5,7 +5,9 @@ import {
   Building2, Megaphone, Moon, Sun, Eye, Menu, X,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { useContactsRealtime, useAtendimentoAlerts, useUnreadContacts } from "@/hooks/queries";
+import {
+  useContactsRealtime, useAtendimentoAlerts, useUnreadContacts, useFeatures,
+} from "@/hooks/queries";
 import { useTheme } from "@/hooks/useTheme";
 import { Logo, LogoMark } from "@/components/layout/Logo";
 import { cn } from "@/lib/utils";
@@ -77,8 +79,13 @@ export default function AppLayout() {
   // isso moram aqui, e não no Chat.
   useAtendimentoAlerts(company?.id);
   const { count: unreadCount } = useUnreadContacts(company?.id, user?.id);
+  // Módulos do pacote desta empresa. Esconder o item é UX — quem recusa de
+  // verdade é a RLS e as edge functions; digitar a URL não pode dar acesso.
+  const { routeEnabled } = useFeatures(company?.id);
 
-  const groups = isSuperAdmin ? [...NAV_GROUPS, SUPER_ADMIN_GROUP] : NAV_GROUPS;
+  const groups = (isSuperAdmin ? [...NAV_GROUPS, SUPER_ADMIN_GROUP] : NAV_GROUPS)
+    // Grupo sem nenhum item liberado não vira um título solto no menu.
+    .filter((group) => group.items.some((item) => routeEnabled(item.to)));
 
   if (loading) {
     return (
@@ -135,7 +142,7 @@ export default function AppLayout() {
                 {group.label}
               </p>
               <div className="space-y-0.5">
-                {group.items.map((item) => (
+                {group.items.filter((item) => routeEnabled(item.to)).map((item) => (
                   <NavLink
                     key={item.to}
                     to={item.to}
@@ -248,7 +255,10 @@ export default function AppLayout() {
           </div>
         )}
         <div className="mx-auto max-w-[1600px] animate-fade-in-up p-4 sm:p-6 lg:p-8">
-          <Outlet />
+          {/* Módulo fora do pacote: quem digitou a URL na mão volta para o
+              começo. Não é a barreira de segurança — é para a tela não abrir
+              vazia e parecer defeito. */}
+          {routeEnabled(pathname) ? <Outlet /> : <Navigate to="/" replace />}
         </div>
       </main>
     </div>
