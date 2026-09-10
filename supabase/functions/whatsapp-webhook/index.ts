@@ -1247,11 +1247,11 @@ async function maybeAiReply(
   ]);
   const [{ data: openOrdersRaw }, { data: openTicketsRaw }] = await Promise.all([
     canOrders
-      ? supabase.from("orders").select("number, status, items").eq("contact_id", contact.id)
+      ? supabase.from("crm_orders").select("number, status, items").eq("contact_id", contact.id)
           .not("status", "in", "(entregue,cancelado)").order("created_at", { ascending: false }).limit(3)
       : Promise.resolve({ data: null }),
     canTickets
-      ? supabase.from("tickets").select("number, status, title").eq("contact_id", contact.id)
+      ? supabase.from("crm_tickets").select("number, status, title").eq("contact_id", contact.id)
           .not("status", "in", "(resolvido,cancelado)").order("created_at", { ascending: false }).limit(3)
       : Promise.resolve({ data: null }),
   ]);
@@ -1541,7 +1541,7 @@ async function maybeAiReply(
             ? Math.round(priced.reduce((sum, i) => sum + (i.price as number) * i.qty, 0) * 100) / 100
             : null;
           const { data: created, error } = await supabase
-            .from("orders")
+            .from("crm_orders")
             .insert({
               company_id: config.company_id,
               contact_id: contact.id,
@@ -1575,7 +1575,7 @@ async function maybeAiReply(
             ? args.prioridade
             : "normal";
           const { data: created, error } = await supabase
-            .from("tickets")
+            .from("crm_tickets")
             .insert({
               company_id: config.company_id,
               contact_id: contact.id,

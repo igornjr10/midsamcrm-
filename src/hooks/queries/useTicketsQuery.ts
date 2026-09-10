@@ -13,7 +13,7 @@ export function useTicketsQuery(companyId: string | undefined, enabled = true) {
     queryFn: async () => {
       if (!companyId) return [];
       const { data, error } = await supabase
-        .from("tickets")
+        .from("crm_tickets")
         .select("*")
         .eq("company_id", companyId)
         .order("created_at", { ascending: false })
@@ -40,7 +40,7 @@ export function useCreateTicketMutation() {
       assigned_to?: string | null;
       due_at?: string | null;
     }) => {
-      const { data, error } = await supabase.from("tickets").insert(payload).select("*").maybeSingle();
+      const { data, error } = await supabase.from("crm_tickets").insert(payload).select("*").maybeSingle();
       if (error) throw error;
       return data as Ticket | null;
     },
@@ -60,7 +60,7 @@ export function useUpdateTicketMutation() {
     }: { id: string; company_id: string } & Partial<
       Pick<Ticket, "status" | "priority" | "assigned_to" | "due_at" | "title" | "description" | "category" | "contact_id">
     >) => {
-      const { error } = await supabase.from("tickets").update(patch).eq("id", id).eq("company_id", company_id);
+      const { error } = await supabase.from("crm_tickets").update(patch).eq("id", id).eq("company_id", company_id);
       if (error) throw error;
     },
     onSuccess: (_, { company_id }) => {
@@ -73,7 +73,7 @@ export function useDeleteTicketMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, company_id }: { id: string; company_id: string }) => {
-      const { error } = await supabase.from("tickets").delete().eq("id", id).eq("company_id", company_id);
+      const { error } = await supabase.from("crm_tickets").delete().eq("id", id).eq("company_id", company_id);
       if (error) throw error;
     },
     onSuccess: (_, { company_id }) => {

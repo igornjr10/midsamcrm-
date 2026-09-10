@@ -13,7 +13,7 @@ export function useOrdersQuery(companyId: string | undefined, enabled = true) {
     queryFn: async () => {
       if (!companyId) return [];
       const { data, error } = await supabase
-        .from("orders")
+        .from("crm_orders")
         .select("*")
         .eq("company_id", companyId)
         .order("created_at", { ascending: false })
@@ -38,7 +38,7 @@ export function useCreateOrderMutation() {
       notes?: string | null;
       status?: OrderStatus;
     }) => {
-      const { data, error } = await supabase.from("orders").insert(payload).select("*").maybeSingle();
+      const { data, error } = await supabase.from("crm_orders").insert(payload).select("*").maybeSingle();
       if (error) throw error;
       return data as Order | null;
     },
@@ -58,7 +58,7 @@ export function useUpdateOrderMutation() {
     }: { id: string; company_id: string } & Partial<
       Pick<Order, "status" | "items" | "total" | "delivery_address" | "notes" | "contact_id">
     >) => {
-      const { error } = await supabase.from("orders").update(patch).eq("id", id).eq("company_id", company_id);
+      const { error } = await supabase.from("crm_orders").update(patch).eq("id", id).eq("company_id", company_id);
       if (error) throw error;
     },
     onSuccess: (_, { company_id }) => {
@@ -71,7 +71,7 @@ export function useDeleteOrderMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, company_id }: { id: string; company_id: string }) => {
-      const { error } = await supabase.from("orders").delete().eq("id", id).eq("company_id", company_id);
+      const { error } = await supabase.from("crm_orders").delete().eq("id", id).eq("company_id", company_id);
       if (error) throw error;
     },
     onSuccess: (_, { company_id }) => {

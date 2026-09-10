@@ -42,7 +42,9 @@ end;
 $$;
 
 -- ── Pedidos ─────────────────────────────────────────────────────────────────
-create table public.orders (
+-- Prefixo crm_: o projeto Supabase já tinha uma tabela `orders` de outro app,
+-- e `tickets` é nome comum demais para arriscar o mesmo choque.
+create table public.crm_orders (
   id uuid primary key default gen_random_uuid(),
   company_id uuid not null references public.companies(id) on delete cascade,
   contact_id uuid references public.contacts(id) on delete set null,
@@ -61,21 +63,21 @@ create table public.orders (
   unique (company_id, number)
 );
 
-create index idx_orders_company_status on public.orders(company_id, status, created_at desc);
-create index idx_orders_contact on public.orders(contact_id) where contact_id is not null;
+create index idx_orders_company_status on public.crm_orders(company_id, status, created_at desc);
+create index idx_orders_contact on public.crm_orders(contact_id) where contact_id is not null;
 
-alter table public.orders enable row level security;
-create policy "company orders" on public.orders for all
+alter table public.crm_orders enable row level security;
+create policy "company orders" on public.crm_orders for all
   using (company_id in (select public.my_company_ids()) or public.is_super_admin())
   with check (company_id in (select public.my_company_ids()) or public.is_super_admin());
 
-create trigger set_orders_number before insert on public.orders
+create trigger set_orders_number before insert on public.crm_orders
   for each row execute function public.set_company_number();
-create trigger update_orders_updated_at before update on public.orders
+create trigger update_orders_updated_at before update on public.crm_orders
   for each row execute function public.update_updated_at_column();
 
 -- ── Chamados ────────────────────────────────────────────────────────────────
-create table public.tickets (
+create table public.crm_tickets (
   id uuid primary key default gen_random_uuid(),
   company_id uuid not null references public.companies(id) on delete cascade,
   contact_id uuid references public.contacts(id) on delete set null,
@@ -96,17 +98,17 @@ create table public.tickets (
   unique (company_id, number)
 );
 
-create index idx_tickets_company_status on public.tickets(company_id, status, created_at desc);
-create index idx_tickets_contact on public.tickets(contact_id) where contact_id is not null;
+create index idx_tickets_company_status on public.crm_tickets(company_id, status, created_at desc);
+create index idx_tickets_contact on public.crm_tickets(contact_id) where contact_id is not null;
 
-alter table public.tickets enable row level security;
-create policy "company tickets" on public.tickets for all
+alter table public.crm_tickets enable row level security;
+create policy "company tickets" on public.crm_tickets for all
   using (company_id in (select public.my_company_ids()) or public.is_super_admin())
   with check (company_id in (select public.my_company_ids()) or public.is_super_admin());
 
-create trigger set_tickets_number before insert on public.tickets
+create trigger set_tickets_number before insert on public.crm_tickets
   for each row execute function public.set_company_number();
-create trigger update_tickets_updated_at before update on public.tickets
+create trigger update_tickets_updated_at before update on public.crm_tickets
   for each row execute function public.update_updated_at_column();
 
 -- resolved_at acompanha o status: é a data que o relatório de prazo vai usar.
@@ -124,7 +126,7 @@ begin
 end;
 $$;
 
-create trigger set_ticket_resolved_at before update of status on public.tickets
+create trigger set_ticket_resolved_at before update of status on public.crm_tickets
   for each row execute function public.set_ticket_resolved_at();
 
 notify pgrst, 'reload schema';
