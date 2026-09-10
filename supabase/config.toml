@@ -436,3 +436,7 @@ verify_jwt = false
 # quem autentica essa volta e o cron do sync-all e a propria function.
 [functions.google-calendar]
 verify_jwt = false
+
+# Chamada pelo cron (pg_net), sem JWT; valida service role ou x-cron-secret.
+[functions.relationship-rules]
+verify_jwt = false

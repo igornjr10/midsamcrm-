@@ -41,6 +41,12 @@ export interface Contact {
   closing_signal_excerpt: string | null;
   /** "pagamento" quando o dinheiro apareceu na conversa; "intencao" quando só foi promessa. */
   closing_signal_type: "pagamento" | "intencao" | null;
+  /** Só o dia e o mês importam: é o que a régua de aniversário usa. */
+  birth_date: string | null;
+  /** Nota de 0 a 10 que o cliente respondeu no WhatsApp. */
+  nps_score: number | null;
+  nps_asked_at: string | null;
+  nps_answered_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -226,6 +232,31 @@ export interface CompanyUsage {
   allow_overage: boolean;
   remaining: number | null;
   period_start: string;
+}
+
+export type RelationshipKind = "aniversario" | "reativacao" | "nps";
+
+/**
+ * Régua de relacionamento: falar com quem já é cliente sem ninguém lembrar.
+ *
+ * Diferente do follow-up, que cobra quem sumiu no meio da conversa: aqui o
+ * gatilho é uma data, um tempo parado ou um negócio fechado.
+ */
+export interface RelationshipRule {
+  id: string;
+  company_id: string;
+  kind: RelationshipKind;
+  enabled: boolean;
+  /** Aceita {{nome}} e {{primeiro_nome}}. */
+  message: string;
+  /** reativacao: dias parado que disparam a mensagem. */
+  inactive_days: number;
+  /** nps: dias depois de fechar até perguntar. */
+  ask_after_days: number;
+  /** Silêncio entre dois envios da mesma régua para o mesmo contato. */
+  cooldown_days: number;
+  created_at: string;
+  updated_at: string;
 }
 
 /** Membro da empresa que pode ser responsável por uma conversa. */

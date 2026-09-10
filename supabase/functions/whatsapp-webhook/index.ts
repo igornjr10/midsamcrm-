@@ -883,6 +883,44 @@ const CHAMAR_HUMANO_TOOL = {
 };
 
 // SDR IA: gera e envia a resposta automática quando habilitada para a empresa.
+/** Sete dias entre a pergunta e a resposta: depois disso, "10" é só um número. */
+const NPS_WINDOW_MS = 7 * 86_400_000;
+
+/**
+ * A resposta da pesquisa de NPS, quando ela é uma nota.
+ *
+ * Só conta se a empresa perguntou nos últimos dias e a mensagem é **apenas** o
+ * número. Aceitar "acho que 9" abriria a porta para transformar em nota o "10"
+ * de "10 unidades" — e o contato perderia a resposta de verdade, porque nota
+ * capturada encerra o turno e a IA não responde.
+ *
+ * Devolve true quando consumiu a mensagem.
+ */
+async function captureNpsScore(supabase: Db, contactId: string, content: string): Promise<boolean> {
+  const match = content.trim().match(/^(10|[0-9])$/);
+  if (!match) return false;
+
+  const { data } = await supabase
+    .from("contacts")
+    .select("nps_asked_at, nps_answered_at")
+    .eq("id", contactId)
+    .maybeSingle();
+  const row = data as { nps_asked_at?: string | null; nps_answered_at?: string | null } | null;
+
+  if (!row?.nps_asked_at || row.nps_answered_at) return false;
+  if (Date.now() - Date.parse(row.nps_asked_at) > NPS_WINDOW_MS) return false;
+
+  await supabase
+    .from("contacts")
+    .update({
+      nps_score: Number(match[1]),
+      nps_answered_at: new Date().toISOString(),
+    })
+    .eq("id", contactId);
+
+  return true;
+}
+
 async function maybeAiReply(
   supabase: Db,
   config: WhatsappConfig,
@@ -1292,6 +1330,9 @@ async function processChange(
         wa_timestamp: msg.timestamp ?? null,
       },
     });
+
+    // Resposta de pesquisa: "9" vira nota, não conversa.
+    if (content && (await captureNpsScore(supabase, contact.id, content))) continue;
 
     // Texto e áudio transcrito seguem para o SDR: nos dois casos existe uma
     // frase real do lead para responder. Imagem e documento ficam com o humano.

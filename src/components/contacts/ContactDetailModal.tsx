@@ -33,6 +33,7 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const [stage, setStage] = useState("new");
   const [notes, setNotes] = useState("");
   const [apptTitle, setApptTitle] = useState("");
@@ -43,6 +44,7 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
     setName(contact.name);
     setPhone(contact.phone ?? "");
     setEmail(contact.email ?? "");
+    setBirthDate(contact.birth_date ?? "");
     setStage(contact.stage);
     setNotes(contact.notes ?? "");
     setApptTitle("");
@@ -59,6 +61,7 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
         name: name.trim() || contact.name,
         phone: phone.trim() || null,
         email: email.trim() || null,
+        birth_date: birthDate || null,
         stage,
         notes: notes.trim() || null,
       });
@@ -157,6 +160,16 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
             <div className="space-y-1.5">
               <Label>E-mail</Label>
               <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Data de nascimento</Label>
+              <Input
+                type="date"
+                value={birthDate}
+                onChange={(e) => setBirthDate(e.target.value)}
+              />
+              {/* Só o dia e o mês são usados: é o gatilho da régua de aniversário. */}
+              <p className="text-xs text-muted-foreground">Usada pela régua de aniversário</p>
             </div>
           </div>
           <div className="space-y-1.5">

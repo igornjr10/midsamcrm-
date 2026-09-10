@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Bot, CalendarClock, History, Loader2, Sparkles } from "lucide-react";
+import { Bot, CalendarClock, HeartHandshake, History, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useAiConfigQuery, useSaveAiConfigMutation } from "@/hooks/queries";
 import FollowupSettings from "@/components/sdr/FollowupSettings";
 import FollowupHistory from "@/components/sdr/FollowupHistory";
+import RelationshipSettings from "@/components/sdr/RelationshipSettings";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -123,6 +124,10 @@ export default function SdrIa() {
           <TabsTrigger value="followup">
             <CalendarClock />
             Follow-up
+          </TabsTrigger>
+          <TabsTrigger value="relacionamento">
+            <HeartHandshake />
+            Relacionamento
           </TabsTrigger>
           <TabsTrigger value="historico">
             <History />
@@ -341,6 +346,10 @@ export default function SdrIa() {
 
         <TabsContent value="followup" className="mt-4">
           <FollowupSettings />
+        </TabsContent>
+
+        <TabsContent value="relacionamento" className="mt-4">
+          <RelationshipSettings />
         </TabsContent>
 
         <TabsContent value="historico" className="mt-4">
