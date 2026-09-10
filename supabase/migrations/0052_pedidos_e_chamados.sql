@@ -26,7 +26,7 @@ on conflict do nothing;
 -- ── Número sequencial por empresa ───────────────────────────────────────────
 -- "Pedido 37", "Protocolo 128": o cliente cita o número, então ele precisa ser
 -- curto e começar do 1 em cada empresa. Uma função só serve às duas tabelas.
-create or replace function public.set_company_number()
+create or replace function public.crm_set_company_number()
 returns trigger
 language plpgsql
 as $$
@@ -63,16 +63,16 @@ create table public.crm_orders (
   unique (company_id, number)
 );
 
-create index idx_orders_company_status on public.crm_orders(company_id, status, created_at desc);
-create index idx_orders_contact on public.crm_orders(contact_id) where contact_id is not null;
+create index idx_crm_orders_company_status on public.crm_orders(company_id, status, created_at desc);
+create index idx_crm_orders_contact on public.crm_orders(contact_id) where contact_id is not null;
 
 alter table public.crm_orders enable row level security;
-create policy "company orders" on public.crm_orders for all
+create policy "company crm orders" on public.crm_orders for all
   using (company_id in (select public.my_company_ids()) or public.is_super_admin())
   with check (company_id in (select public.my_company_ids()) or public.is_super_admin());
 
-create trigger set_orders_number before insert on public.crm_orders
-  for each row execute function public.set_company_number();
+create trigger crm_set_orders_number before insert on public.crm_orders
+  for each row execute function public.crm_set_company_number();
 create trigger update_orders_updated_at before update on public.crm_orders
   for each row execute function public.update_updated_at_column();
 
@@ -98,21 +98,21 @@ create table public.crm_tickets (
   unique (company_id, number)
 );
 
-create index idx_tickets_company_status on public.crm_tickets(company_id, status, created_at desc);
-create index idx_tickets_contact on public.crm_tickets(contact_id) where contact_id is not null;
+create index idx_crm_tickets_company_status on public.crm_tickets(company_id, status, created_at desc);
+create index idx_crm_tickets_contact on public.crm_tickets(contact_id) where contact_id is not null;
 
 alter table public.crm_tickets enable row level security;
-create policy "company tickets" on public.crm_tickets for all
+create policy "company crm tickets" on public.crm_tickets for all
   using (company_id in (select public.my_company_ids()) or public.is_super_admin())
   with check (company_id in (select public.my_company_ids()) or public.is_super_admin());
 
-create trigger set_tickets_number before insert on public.crm_tickets
-  for each row execute function public.set_company_number();
+create trigger crm_set_tickets_number before insert on public.crm_tickets
+  for each row execute function public.crm_set_company_number();
 create trigger update_tickets_updated_at before update on public.crm_tickets
   for each row execute function public.update_updated_at_column();
 
 -- resolved_at acompanha o status: é a data que o relatório de prazo vai usar.
-create or replace function public.set_ticket_resolved_at()
+create or replace function public.crm_set_ticket_resolved_at()
 returns trigger
 language plpgsql
 as $$
@@ -126,7 +126,7 @@ begin
 end;
 $$;
 
-create trigger set_ticket_resolved_at before update of status on public.crm_tickets
-  for each row execute function public.set_ticket_resolved_at();
+create trigger crm_set_ticket_resolved_at before update of status on public.crm_tickets
+  for each row execute function public.crm_set_ticket_resolved_at();
 
 notify pgrst, 'reload schema';
