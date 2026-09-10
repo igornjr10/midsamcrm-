@@ -7,8 +7,17 @@ import {
   useCreateAppointmentMutation,
   useUpdateContactMutation,
   usePipelineStagesQuery,
+  useContactFieldsQuery,
+  useFeatures,
+  useOrdersQuery,
+  useTicketsQuery,
 } from "@/hooks/queries";
-import { getStageLabel, getStageTone, type Contact } from "@/lib/types";
+import {
+  getStageLabel, getStageTone, ORDER_STATUSES, TICKET_STATUSES, type Contact,
+} from "@/lib/types";
+import { formatFieldValue } from "@/lib/fields";
+import TagPicker from "@/components/contacts/TagPicker";
+import ContactRecords from "@/components/contacts/ContactRecords";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,7 +43,16 @@ const dia = (iso: string) => new Date(iso).toLocaleDateString("pt-BR");
 export default function ContactPanel({ contact }: { contact: Contact }) {
   const { user, company } = useAuth();
   const { data: stages = [] } = usePipelineStagesQuery(company?.id);
+  const { data: fieldDefs = [] } = useContactFieldsQuery(company?.id);
+  const { has } = useFeatures(company?.id);
+  const { data: orders = [] } = useOrdersQuery(company?.id, has("pedidos"));
+  const { data: tickets = [] } = useTicketsQuery(company?.id, has("chamados"));
+  const openOrders = orders.filter((o) => o.contact_id === contact.id && o.status !== "entregue" && o.status !== "cancelado");
+  const openTickets = tickets.filter((t) => t.contact_id === contact.id && t.status !== "resolvido" && t.status !== "cancelado");
   const { data: appointments = [] } = useContactAppointmentsQuery(company?.id, contact.id);
+  const dados = fieldDefs
+    .map((f) => ({ field: f, text: formatFieldValue(f, contact.fields?.[f.key]) }))
+    .filter((d): d is { field: typeof d.field; text: string } => !!d.text);
   const createAppointment = useCreateAppointmentMutation();
   const updateContact = useUpdateContactMutation();
 
@@ -164,6 +182,85 @@ export default function ContactPanel({ contact }: { contact: Contact }) {
               {getStageLabel(stages, contact.stage)}
             </Badge>
           </div>
+
+          {/* ── Etiquetas ──────────────────────────────────────────────────── */}
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Etiquetas
+            </p>
+            <TagPicker
+              compact
+              value={contact.tags ?? []}
+              onChange={(tags) => {
+                if (!company) return;
+                void updateContact.mutateAsync({ id: contact.id, company_id: company.id, tags })
+                  .catch((err: unknown) => toast.error(err instanceof Error ? err.message : "Erro ao salvar etiquetas"));
+              }}
+            />
+          </div>
+
+          {/* ── Dados do negócio ───────────────────────────────────────────── */}
+          {dados.length > 0 && (
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Dados
+              </p>
+              <dl className="space-y-1.5 rounded-lg border p-2.5 text-xs">
+                {dados.map(({ field, text }) => (
+                  <div key={field.id} className="flex items-baseline justify-between gap-2">
+                    <dt className="truncate text-muted-foreground">{field.label}</dt>
+                    <dd className="tabular shrink-0 font-medium">{text}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
+
+          <ContactRecords contact={contact} compact />
+
+          {/* ── Pedidos e chamados abertos ─────────────────────────────────── */}
+          {openOrders.length > 0 && (
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Pedidos abertos
+              </p>
+              <div className="space-y-1.5">
+                {openOrders.slice(0, 4).map((o) => (
+                  <div key={o.id} className="flex items-center justify-between gap-2 rounded-lg border p-2.5 text-xs">
+                    <span className="min-w-0">
+                      <span className="tabular block font-medium">#{o.number}</span>
+                      <span className="block truncate text-muted-foreground">
+                        {o.items.map((i) => `${i.qty}× ${i.name}`).join(", ")}
+                      </span>
+                    </span>
+                    <Badge variant="outline" className={cn("shrink-0", ORDER_STATUSES.find((s) => s.id === o.status)?.badge)}>
+                      {ORDER_STATUSES.find((s) => s.id === o.status)?.label}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {openTickets.length > 0 && (
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Chamados abertos
+              </p>
+              <div className="space-y-1.5">
+                {openTickets.slice(0, 4).map((t) => (
+                  <div key={t.id} className="flex items-center justify-between gap-2 rounded-lg border p-2.5 text-xs">
+                    <span className="min-w-0">
+                      <span className="tabular block font-medium">#{t.number} · {t.title}</span>
+                      {t.category && <span className="block truncate text-muted-foreground">{t.category}</span>}
+                    </span>
+                    <Badge variant="outline" className={cn("shrink-0", TICKET_STATUSES.find((s) => s.id === t.status)?.badge)}>
+                      {TICKET_STATUSES.find((s) => s.id === t.status)?.label}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* ── Agenda ─────────────────────────────────────────────────────── */}
           <div>

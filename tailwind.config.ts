@@ -14,6 +14,10 @@ export default {
       },
     },
     extend: {
+      fontFamily: {
+        sans: ["'Inter Variable'", "Inter", "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ["'JetBrains Mono Variable'", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -63,16 +67,23 @@ export default {
         },
       },
       borderRadius: {
+        "2xl": "calc(var(--radius) + 4px)",
+        xl: "calc(var(--radius) + 2px)",
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
       boxShadow: {
-        card: "0 1px 2px -1px hsl(var(--shadow-color) / 0.10), 0 2px 6px -2px hsl(var(--shadow-color) / 0.08)",
+        // Sombras curtas e de baixa opacidade: profundidade sem "flutuar"
+        card: "0 1px 1px hsl(var(--shadow-color) / 0.04), 0 1px 3px hsl(var(--shadow-color) / 0.06)",
         "card-hover":
-          "0 2px 4px -2px hsl(var(--shadow-color) / 0.12), 0 8px 20px -6px hsl(var(--shadow-color) / 0.14)",
-        "glow-sm": "0 1px 2px hsl(var(--primary) / 0.20), 0 2px 8px -2px hsl(var(--primary) / 0.28)",
-        "glow-md": "0 2px 4px hsl(var(--primary) / 0.22), 0 8px 20px -4px hsl(var(--primary) / 0.35)",
+          "0 1px 2px hsl(var(--shadow-color) / 0.06), 0 8px 24px -8px hsl(var(--shadow-color) / 0.18)",
+        popover:
+          "0 1px 2px hsl(var(--shadow-color) / 0.06), 0 12px 32px -8px hsl(var(--shadow-color) / 0.22)",
+        modal:
+          "0 2px 4px hsl(var(--shadow-color) / 0.06), 0 24px 64px -16px hsl(var(--shadow-color) / 0.35)",
+        "glow-sm": "inset 0 1px 0 hsl(0 0% 100% / 0.16), 0 1px 2px hsl(var(--primary) / 0.30)",
+        "glow-md": "inset 0 1px 0 hsl(0 0% 100% / 0.16), 0 4px 14px -2px hsl(var(--primary) / 0.40)",
       },
       keyframes: {
         "accordion-down": {

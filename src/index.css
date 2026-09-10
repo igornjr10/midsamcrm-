@@ -1,26 +1,31 @@
+/* Fontes self-hosted: sem chamada externa, sem flash de fonte trocando e funciona
+   offline. Inter para a interface, JetBrains Mono para chaves, URLs e código. */
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --background: 210 40% 98%;
-    --foreground: 224 45% 12%;
+    --background: 220 30% 97.5%;
+    --foreground: 224 40% 11%;
 
     --card: 0 0% 100%;
-    --card-foreground: 224 45% 12%;
+    --card-foreground: 224 40% 11%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 224 45% 12%;
+    --popover-foreground: 224 40% 11%;
 
     --primary: 222 78% 49%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 40% 96%;
-    --secondary-foreground: 224 45% 16%;
+    --secondary: 220 30% 95%;
+    --secondary-foreground: 224 40% 16%;
 
-    --muted: 220 40% 96%;
-    --muted-foreground: 222 14% 46%;
+    --muted: 220 30% 95%;
+    --muted-foreground: 222 12% 46%;
 
     --accent: 221 80% 95%;
     --accent-foreground: 222 70% 32%;
@@ -34,13 +39,13 @@
     --warning: 35 92% 45%;
     --warning-foreground: 0 0% 100%;
 
-    --border: 220 28% 88%;
-    --input: 220 28% 90%;
+    --border: 220 22% 89%;
+    --input: 220 22% 88%;
     --ring: 222 78% 49%;
 
     --sidebar: 0 0% 100%;
-    --sidebar-foreground: 224 45% 12%;
-    --sidebar-border: 220 28% 90%;
+    --sidebar-foreground: 224 40% 11%;
+    --sidebar-border: 220 22% 91%;
 
     --shadow-color: 222 45% 25%;
 
@@ -48,28 +53,28 @@
   }
 
   .dark {
-    --background: 224 55% 8%;
-    --foreground: 214 40% 96%;
+    --background: 224 40% 6.5%;
+    --foreground: 214 35% 95%;
 
-    --card: 224 45% 11%;
-    --card-foreground: 214 40% 96%;
+    --card: 224 34% 9.5%;
+    --card-foreground: 214 35% 95%;
 
-    --popover: 224 45% 11%;
-    --popover-foreground: 214 40% 96%;
+    --popover: 224 34% 10%;
+    --popover-foreground: 214 35% 95%;
 
-    --primary: 220 90% 62%;
+    --primary: 220 90% 63%;
     --primary-foreground: 224 60% 8%;
 
-    --secondary: 223 35% 16%;
+    --secondary: 223 28% 15%;
     --secondary-foreground: 214 30% 92%;
 
-    --muted: 223 35% 16%;
-    --muted-foreground: 220 16% 65%;
+    --muted: 223 28% 14%;
+    --muted-foreground: 220 14% 64%;
 
-    --accent: 223 45% 20%;
+    --accent: 222 45% 18%;
     --accent-foreground: 214 45% 97%;
 
-    --destructive: 0 68% 55%;
+    --destructive: 0 68% 58%;
     --destructive-foreground: 0 0% 100%;
 
     --success: 152 55% 48%;
@@ -78,15 +83,15 @@
     --warning: 38 92% 58%;
     --warning-foreground: 224 60% 8%;
 
-    --border: 223 32% 20%;
-    --input: 223 35% 18%;
-    --ring: 220 90% 62%;
+    --border: 223 24% 17%;
+    --input: 223 24% 19%;
+    --ring: 220 90% 63%;
 
-    --sidebar: 224 50% 10%;
-    --sidebar-foreground: 214 40% 96%;
-    --sidebar-border: 223 32% 18%;
+    --sidebar: 224 36% 8%;
+    --sidebar-foreground: 214 35% 95%;
+    --sidebar-border: 223 24% 15%;
 
-    --shadow-color: 224 70% 3%;
+    --shadow-color: 224 70% 2%;
   }
 }
 
@@ -96,13 +101,26 @@
   }
 
   html {
-    font-family: ui-sans-serif, system-ui, sans-serif;
+    @apply font-sans;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    /* Alternativas estilísticas da Inter que deixam a leitura mais "de produto":
+       cv11 = "a" de um andar, cv02/cv03/cv04 = formas mais abertas em a/g/r */
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 
   body {
     @apply bg-background text-foreground;
+  }
+
+  /* Títulos ficam mais compactos em fontes grandes; texto corrido não precisa disso. */
+  h1, h2, h3 {
+    letter-spacing: -0.02em;
+  }
+
+  ::selection {
+    background-color: hsl(var(--primary) / 0.2);
   }
 
   /* Números tabulares em métricas e datas evitam o texto "dançar" ao atualizar */
@@ -134,5 +152,11 @@
 
   .scrollbar-slim::-webkit-scrollbar-thumb:hover {
     background-color: hsl(var(--muted-foreground) / 0.5);
+  }
+
+  /* Fundo pontilhado das telas de entrada: dá textura sem competir com o card */
+  .bg-dot-grid {
+    background-image: radial-gradient(hsl(var(--foreground) / 0.08) 1px, transparent 1px);
+    background-size: 22px 22px;
   }
 }

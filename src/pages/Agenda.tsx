@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   Ban, CalendarDays, CheckCheck, ChevronLeft, ChevronRight, Clock, MapPin, Plus, RefreshCw,
-  Trash2, User,
+  Trash2, User, UserCheck, SlidersHorizontal,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -12,8 +12,12 @@ import {
   useDeleteAppointmentMutation,
   useContactsQuery,
   useGoogleCalendarAutoSync,
+  useAppointmentKindsQuery,
+  useResourcesQuery,
 } from "@/hooks/queries";
-import type { Appointment, AppointmentKind } from "@/lib/types";
+import ResourcesDialog from "@/components/agenda/ResourcesDialog";
+import WaitlistCard from "@/components/agenda/WaitlistCard";
+import { STAGE_TONES, type Appointment, type AppointmentKind } from "@/lib/types";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +32,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-const KINDS: Record<AppointmentKind, { label: string; dot: string }> = {
+const KINDS: Record<string, { label: string; dot: string }> = {
   meeting: { label: "Reunião", dot: "bg-primary" },
   call: { label: "Ligação", dot: "bg-sky-500" },
   visit: { label: "Visita", dot: "bg-violet-500" },
@@ -62,6 +66,11 @@ export default function Agenda() {
   });
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
   const [createOpen, setCreateOpen] = useState(false);
+  const [resourcesOpen, setResourcesOpen] = useState(false);
+  // "all" ou o id de um recurso: a agenda de uma profissional só.
+  const [resourceFilter, setResourceFilter] = useState("all");
+  // Compromisso recém-cancelado: a lista de espera oferece a vaga.
+  const [offerSlot, setOfferSlot] = useState<Appointment | null>(null);
 
   // 6 semanas fixas: a grade não muda de altura ao trocar de mês.
   const gridStart = useMemo(
@@ -80,6 +89,16 @@ export default function Agenda() {
 
   const { data: appointments = [], isPending } = useAppointmentsQuery(company?.id, range);
   const { data: contacts = [] } = useContactsQuery(company?.id);
+  const { data: companyKinds = [] } = useAppointmentKindsQuery(company?.id);
+  const { data: resources = [] } = useResourcesQuery(company?.id);
+  const resourceNameById = useMemo(() => new Map(resources.map((r) => [r.id, r.name])), [resources]);
+  // Tipos base mais os do nicho (degustação, consulta, assembleia...).
+  const kinds = useMemo(() => {
+    const extra = Object.fromEntries(
+      companyKinds.map((k) => [k.key, { label: k.label, dot: STAGE_TONES[k.tone]?.dot ?? KINDS.other.dot }]),
+    );
+    return { ...KINDS, ...extra };
+  }, [companyKinds]);
   // Puxa o que mudou no Google antes de desenhar o mês. Não bloqueia nada: a
   // agenda local aparece na hora e ganha os eventos de lá quando chegarem.
   const googleSync = useGoogleCalendarAutoSync(company?.id);
@@ -95,13 +114,14 @@ export default function Agenda() {
   const byDay = useMemo(() => {
     const map = new Map<string, Appointment[]>();
     for (const item of appointments) {
+      if (resourceFilter !== "all" && item.resource_id !== resourceFilter) continue;
       const key = dayKey(new Date(item.starts_at));
       const list = map.get(key);
       if (list) list.push(item);
       else map.set(key, [item]);
     }
     return map;
-  }, [appointments]);
+  }, [appointments, resourceFilter]);
 
   const todayKey = dayKey(new Date());
   const selectedKey = dayKey(selectedDay);
@@ -122,6 +142,7 @@ export default function Agenda() {
     end: "",
     all_day: false,
     contact_id: "none",
+    resource_id: "none",
     location: "",
     description: "",
   });
@@ -159,6 +180,7 @@ export default function Agenda() {
         location: form.location.trim() || null,
         description: form.description.trim() || null,
         contact_id: form.contact_id === "none" ? null : form.contact_id,
+        resource_id: form.resource_id === "none" ? null : form.resource_id,
       });
       toast.success("Compromisso agendado");
       setCreateOpen(false);
@@ -172,6 +194,8 @@ export default function Agenda() {
   const patchStatus = (item: Appointment, status: Appointment["status"]) => {
     if (!company) return;
     void updateAppointment.mutateAsync({ id: item.id, company_id: company.id, status });
+    // Cancelou um horário marcado: a vaga pode ir para a lista de espera.
+    if (status === "canceled" && item.status === "scheduled") setOfferSlot(item);
   };
 
   const goToday = () => {
@@ -202,10 +226,29 @@ export default function Agenda() {
           </>
         }
         actions={
-          <Button onClick={openCreate}>
-            <Plus />
-            Novo compromisso
-          </Button>
+          <>
+            {resources.length > 0 && (
+              <Select value={resourceFilter} onValueChange={setResourceFilter}>
+                <SelectTrigger className="w-44">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os recursos</SelectItem>
+                  {resources.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <Button variant="outline" onClick={() => setResourcesOpen(true)}>
+              <SlidersHorizontal />
+              Recursos
+            </Button>
+            <Button onClick={openCreate}>
+              <Plus />
+              Novo compromisso
+            </Button>
+          </>
         }
       />
 
@@ -275,7 +318,7 @@ export default function Agenda() {
                         <span
                           className={cn(
                             "h-1.5 w-1.5 shrink-0 rounded-full",
-                            KINDS[item.kind]?.dot ?? KINDS.other.dot,
+                            kinds[item.kind]?.dot ?? KINDS.other.dot,
                             // Pendência não é apagada: é o que mais precisa ser visto.
                             !isOpen(item.status) && "opacity-40",
                           )}
@@ -304,6 +347,7 @@ export default function Agenda() {
           </div>
         </div>
 
+        <div className="space-y-4">
         <div className="rounded-xl border bg-card p-4 shadow-card">
           <p className="text-sm font-semibold capitalize">
             {selectedDay.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}
@@ -370,12 +414,18 @@ export default function Agenda() {
                               ? "Dia inteiro"
                               : `${hhmm(item.starts_at)}${item.ends_at ? ` – ${hhmm(item.ends_at)}` : ""}`}
                             {" · "}
-                            {KINDS[item.kind]?.label ?? KINDS.other.label}
+                            {kinds[item.kind]?.label ?? KINDS.other.label}
                           </span>
                           {contactName && (
                             <span className="flex min-w-0 items-center gap-1">
                               <User className="h-3.5 w-3.5 shrink-0" />
                               <span className="truncate">{contactName}</span>
+                            </span>
+                          )}
+                          {item.resource_id && resourceNameById.get(item.resource_id) && (
+                            <span className="flex min-w-0 items-center gap-1">
+                              <UserCheck className="h-3.5 w-3.5 shrink-0" />
+                              <span className="truncate">{resourceNameById.get(item.resource_id)}</span>
                             </span>
                           )}
                           {item.location && (
@@ -392,6 +442,12 @@ export default function Agenda() {
                           <Badge variant="outline" className="mt-2">
                             Cancelado
                           </Badge>
+                        )}
+                        {!canceled && !done && item.confirmed_at && (
+                          <Badge variant="success" className="mt-2">Confirmado pelo cliente</Badge>
+                        )}
+                        {!canceled && !done && item.confirmation_reply === "2" && (
+                          <Badge variant="warning" className="mt-2">Pediu para remarcar</Badge>
                         )}
                         {pending && (
                           <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -434,6 +490,8 @@ export default function Agenda() {
             </div>
           )}
         </div>
+        <WaitlistCard offerSlot={offerSlot} onOfferHandled={() => setOfferSlot(null)} />
+        </div>
       </div>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -463,7 +521,7 @@ export default function Agenda() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(KINDS).map(([value, { label }]) => (
+                    {Object.entries(kinds).map(([value, { label }]) => (
                       <SelectItem key={value} value={value}>
                         {label}
                       </SelectItem>
@@ -530,6 +588,26 @@ export default function Agenda() {
               </Select>
             </div>
 
+            {resources.some((r) => r.active) && (
+              <div className="space-y-1.5">
+                <Label>Recurso</Label>
+                <Select
+                  value={form.resource_id}
+                  onValueChange={(v) => setForm((p) => ({ ...p, resource_id: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhum</SelectItem>
+                    {resources.filter((r) => r.active).map((r) => (
+                      <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <Label>Local (opcional)</Label>
               <Input
@@ -554,6 +632,7 @@ export default function Agenda() {
           </div>
         </DialogContent>
       </Dialog>
+      <ResourcesDialog open={resourcesOpen} onOpenChange={setResourcesOpen} />
     </div>
   );
 }

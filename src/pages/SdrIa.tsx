@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Bot, CalendarClock, History, Loader2, Sparkles } from "lucide-react";
+import { Bot, CalendarClock, HeartHandshake, History, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useAiConfigQuery, useSaveAiConfigMutation } from "@/hooks/queries";
 import FollowupSettings from "@/components/sdr/FollowupSettings";
 import FollowupHistory from "@/components/sdr/FollowupHistory";
+import RelationshipSettings from "@/components/sdr/RelationshipSettings";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SkeletonForm } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
@@ -124,6 +126,10 @@ export default function SdrIa() {
             <CalendarClock />
             Follow-up
           </TabsTrigger>
+          <TabsTrigger value="relacionamento">
+            <HeartHandshake />
+            Relacionamento
+          </TabsTrigger>
           <TabsTrigger value="historico">
             <History />
             Histórico
@@ -142,9 +148,7 @@ export default function SdrIa() {
             </CardHeader>
             <CardContent className="space-y-4">
               {isPending ? (
-                <div className="flex justify-center py-6">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                </div>
+                <SkeletonForm fields={4} />
               ) : (
                 <>
                   <label
@@ -341,6 +345,10 @@ export default function SdrIa() {
 
         <TabsContent value="followup" className="mt-4">
           <FollowupSettings />
+        </TabsContent>
+
+        <TabsContent value="relacionamento" className="mt-4">
+          <RelationshipSettings />
         </TabsContent>
 
         <TabsContent value="historico" className="mt-4">

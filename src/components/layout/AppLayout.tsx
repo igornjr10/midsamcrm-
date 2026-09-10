@@ -2,12 +2,16 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, Navigate, useLocation } from "react-router-dom";
 import {
   Kanban, Users, MessageSquare, CalendarDays, Settings, LogOut, Loader2, Bot, Library,
-  Building2, Megaphone, Moon, Sun, Eye, Menu, X,
+  Building2, Megaphone, Moon, Sun, Eye, Menu, X, ShoppingBag, LifeBuoy,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { useContactsRealtime, useAtendimentoAlerts, useUnreadContacts } from "@/hooks/queries";
+import {
+  useContactsRealtime, useAtendimentoAlerts, useUnreadContacts, useFeatures,
+} from "@/hooks/queries";
 import { useTheme } from "@/hooks/useTheme";
 import { Logo, LogoMark } from "@/components/layout/Logo";
+import { EmptyState } from "@/components/ui/empty-state";
+import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const NAV_GROUPS = [
@@ -23,6 +27,8 @@ const NAV_GROUPS = [
     label: "Atendimento",
     items: [
       { to: "/chat", label: "Chat", icon: MessageSquare },
+      { to: "/pedidos", label: "Pedidos", icon: ShoppingBag },
+      { to: "/chamados", label: "Chamados", icon: LifeBuoy },
       { to: "/disparos", label: "Disparos", icon: Megaphone },
       { to: "/sdr", label: "SDR IA", icon: Bot },
       { to: "/biblioteca", label: "Biblioteca", icon: Library },
@@ -41,10 +47,10 @@ const SUPER_ADMIN_GROUP = {
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   cn(
-    "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+    "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-[13.5px] font-medium transition-colors duration-150",
     isActive
-      ? "bg-accent font-semibold text-accent-foreground"
-      : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+      ? "bg-primary/10 text-primary dark:bg-primary/15"
+      : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
   );
 
 export default function AppLayout() {
@@ -77,8 +83,13 @@ export default function AppLayout() {
   // isso moram aqui, e não no Chat.
   useAtendimentoAlerts(company?.id);
   const { count: unreadCount } = useUnreadContacts(company?.id, user?.id);
+  // Módulos do pacote desta empresa. Esconder o item é UX — quem recusa de
+  // verdade é a RLS e as edge functions; digitar a URL não pode dar acesso.
+  const { routeEnabled } = useFeatures(company?.id);
 
-  const groups = isSuperAdmin ? [...NAV_GROUPS, SUPER_ADMIN_GROUP] : NAV_GROUPS;
+  const groups = (isSuperAdmin ? [...NAV_GROUPS, SUPER_ADMIN_GROUP] : NAV_GROUPS)
+    // Grupo sem nenhum item liberado não vira um título solto no menu.
+    .filter((group) => group.items.some((item) => routeEnabled(item.to)));
 
   if (loading) {
     return (
@@ -101,13 +112,13 @@ export default function AppLayout() {
           type="button"
           aria-label="Fechar menu"
           onClick={() => setNavOpen(false)}
-          className="fixed inset-0 z-30 bg-foreground/40 backdrop-blur-[1px] lg:hidden"
+          className="fixed inset-0 z-30 bg-foreground/40 backdrop-blur-[2px] lg:hidden"
         />
       )}
 
       <aside
         className={cn(
-          "z-40 flex w-60 flex-shrink-0 flex-col border-r border-sidebar-border bg-sidebar",
+          "z-40 flex w-64 flex-shrink-0 flex-col border-r border-sidebar-border bg-sidebar",
           // Mobile: gaveta deslizante fora do fluxo.
           "fixed inset-y-0 left-0 h-screen transition-transform duration-200",
           navOpen ? "translate-x-0" : "-translate-x-full",
@@ -122,20 +133,20 @@ export default function AppLayout() {
           <button
             onClick={() => setNavOpen(false)}
             aria-label="Fechar menu"
-            className="-mr-1 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground lg:hidden"
+            className="-mr-1 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground lg:hidden"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <nav className="scrollbar-slim flex-1 space-y-5 overflow-y-auto px-3 py-4">
+        <nav className="scrollbar-slim flex-1 space-y-6 overflow-y-auto px-3 py-5">
           {groups.map((group) => (
             <div key={group.label}>
-              <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+              <p className="px-3 pb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">
                 {group.label}
               </p>
               <div className="space-y-0.5">
-                {group.items.map((item) => (
+                {group.items.filter((item) => routeEnabled(item.to)).map((item) => (
                   <NavLink
                     key={item.to}
                     to={item.to}
@@ -144,13 +155,6 @@ export default function AppLayout() {
                   >
                     {({ isActive }) => (
                       <>
-                        {/* Marcador na borda esquerda: mostra a página ativa sem pintar o item inteiro */}
-                        <span
-                          className={cn(
-                            "absolute -left-3 h-5 w-1 rounded-r-full bg-primary transition-opacity",
-                            isActive ? "opacity-100" : "opacity-0",
-                          )}
-                        />
                         <item.icon
                           className={cn(
                             "h-[18px] w-[18px] shrink-0 transition-colors",
@@ -176,8 +180,8 @@ export default function AppLayout() {
         </nav>
 
         <div className="border-t border-sidebar-border p-3">
-          <div className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+          <div className="flex items-center gap-2.5 rounded-xl border border-border/60 bg-muted/40 px-2.5 py-2">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/70 text-sm font-semibold text-primary-foreground shadow-glow-sm">
               {initials}
             </span>
             <div className="min-w-0 flex-1">
@@ -193,7 +197,7 @@ export default function AppLayout() {
               onClick={toggleTheme}
               title={resolved === "dark" ? "Mudar para tema claro" : "Mudar para tema escuro"}
               aria-label={resolved === "dark" ? "Mudar para tema claro" : "Mudar para tema escuro"}
-              className="flex flex-1 items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+              className="flex flex-1 items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
             >
               {resolved === "dark" ? (
                 <Sun className="h-[18px] w-[18px] shrink-0" />
@@ -217,16 +221,16 @@ export default function AppLayout() {
 
       <main className="scrollbar-slim min-w-0 flex-1 overflow-auto">
         {/* Barra do mobile: sem ela não há como abrir a navegação. */}
-        <div className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur lg:hidden">
+        <div className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-border/70 bg-background/80 px-4 backdrop-blur-md lg:hidden">
           <button
             onClick={() => setNavOpen(true)}
             aria-label="Abrir menu"
-            className="-ml-2 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+            className="-ml-2 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
           >
             <Menu className="h-5 w-5" />
           </button>
           <Logo />
-          <span className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+          <span className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/70 text-sm font-semibold text-primary-foreground shadow-glow-sm">
             {initials}
           </span>
         </div>
@@ -248,7 +252,34 @@ export default function AppLayout() {
           </div>
         )}
         <div className="mx-auto max-w-[1600px] animate-fade-in-up p-4 sm:p-6 lg:p-8">
-          <Outlet />
+          {/* Sem empresa ativa não há o que carregar: toda query fica
+              desabilitada e, no react-query, query desabilitada permanece
+              "pendente" para sempre — a tela ficava girando sem fim. O super
+              admin sem vínculo com empresa nenhuma caía exatamente aqui. */}
+          {!company && pathname !== "/empresas" ? (
+            <EmptyState
+              icon={Building2}
+              title="Escolha uma empresa"
+              description={
+                isSuperAdmin
+                  ? "Sua conta administra a plataforma, mas não pertence a nenhuma empresa. Entre em uma para ver o CRM dela."
+                  : "Sua conta ainda não está vinculada a nenhuma empresa. Fale com o suporte."
+              }
+              action={
+                isSuperAdmin ? (
+                  <NavLink to="/empresas" className={buttonVariants({ size: "sm" })}>
+                    <Building2 className="h-4 w-4" />
+                    Ver empresas
+                  </NavLink>
+                ) : null
+              }
+              className="mt-10"
+            />
+          ) : routeEnabled(pathname) ? (
+            <Outlet />
+          ) : (
+            <Navigate to="/" replace />
+          )}
         </div>
       </main>
     </div>

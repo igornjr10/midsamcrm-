@@ -68,6 +68,7 @@ export function useCreateAppointmentMutation() {
       description?: string | null;
       location?: string | null;
       contact_id?: string | null;
+      resource_id?: string | null;
     }) => {
       const { error } = await supabase.from("appointments").insert(payload);
       if (error) throw error;

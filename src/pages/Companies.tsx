@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, LogIn, Pencil, Plus } from "lucide-react";
+import { Building2, LogIn, Pencil, Plus, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -14,6 +14,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/layout/PageHeader";
+import ModulesDialog from "@/components/companies/ModulesDialog";
 
 interface CompanyRow extends Company {
   member_count: number;
@@ -40,6 +41,7 @@ export default function Companies() {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ company_name: "", email: "", password: "", full_name: "" });
   const [editing, setEditing] = useState<CompanyRow | null>(null);
+  const [modulesFor, setModulesFor] = useState<CompanyRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [editForm, setEditForm] = useState({ company_name: "", email: "" });
 
@@ -59,6 +61,25 @@ export default function Companies() {
         ...c,
         member_count: counts.get(c.id) ?? 0,
       })) as CompanyRow[];
+    },
+    enabled: isSuperAdmin,
+    staleTime: 30_000,
+  });
+
+  // Nicho e consumo do mês, numa chamada só: uma por empresa multiplicaria o
+  // tempo de abertura da tela pelo número de clientes.
+  const { data: overview } = useQuery({
+    queryKey: ["companies-overview"] as const,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("companies_overview");
+      if (error) throw error;
+      const rows = (data ?? []) as Array<{
+        company_id: string;
+        niche_name: string | null;
+        monthly_coins: number | null;
+        used: number;
+      }>;
+      return new Map(rows.map((r) => [r.company_id, r]));
     },
     enabled: isSuperAdmin,
     staleTime: 30_000,
@@ -223,23 +244,25 @@ export default function Companies() {
           <table className="w-full text-sm">
             <thead className="border-b bg-muted/50 text-left">
               <tr className="text-xs uppercase tracking-wide text-muted-foreground">
-                <th className="px-4 py-3 font-semibold">Empresa</th>
-                <th className="px-4 py-3 font-semibold">E-mail de login</th>
-                <th className="px-4 py-3 font-semibold">Membros</th>
-                <th className="px-4 py-3 font-semibold">Criada em</th>
+                <th className="whitespace-nowrap px-4 py-3 font-semibold">Empresa</th>
+                <th className="whitespace-nowrap px-4 py-3 font-semibold">E-mail de login</th>
+                <th className="whitespace-nowrap px-4 py-3 font-semibold">Nicho</th>
+                <th className="whitespace-nowrap px-4 py-3 font-semibold">Envios</th>
+                <th className="whitespace-nowrap px-4 py-3 font-semibold">Membros</th>
+                <th className="whitespace-nowrap px-4 py-3 font-semibold">Criada em</th>
                 <th className="px-4 py-3 text-right font-semibold">Acesso</th>
               </tr>
             </thead>
             <tbody>
               {isPending ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
                     Carregando...
                   </td>
                 </tr>
               ) : companies.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center">
+                  <td colSpan={7} className="px-4 py-12 text-center">
                     <Building2 className="mx-auto mb-3 h-8 w-8 text-muted-foreground/60" />
                     <p className="text-sm font-medium">Nenhuma empresa ainda</p>
                     <p className="mt-1 text-sm text-muted-foreground">
@@ -255,11 +278,50 @@ export default function Companies() {
                         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
                           {c.name.trim().charAt(0).toUpperCase() || "?"}
                         </span>
-                        <span className="font-medium">{c.name}</span>
+                        <span className="whitespace-nowrap font-medium">{c.name}</span>
                       </span>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
-                      {owners?.get(c.id) || "—"}
+                      {/* O e-mail é o campo mais largo e o menos consultado:
+                          truncar aqui é o que deixa as ações caberem sem barra
+                          de rolagem horizontal. */}
+                      <span className="block max-w-[220px] truncate" title={owners?.get(c.id) || ""}>
+                        {owners?.get(c.id) || "—"}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {overview?.get(c.id)?.niche_name ? (
+                        <Badge variant="secondary">{overview.get(c.id)!.niche_name}</Badge>
+                      ) : (
+                        <span className="text-muted-foreground">Sem nicho</span>
+                      )}
+                    </td>
+                    <td className="tabular whitespace-nowrap px-4 py-3">
+                      {(() => {
+                        const linha = overview?.get(c.id);
+                        if (!linha) return <span className="text-muted-foreground">—</span>;
+                        const usado = Number(linha.used ?? 0);
+                        // Sem cota, o número sozinho já diz o que interessa:
+                        // quanto a empresa consumiu. Com cota, o que importa é
+                        // a proporção.
+                        if (linha.monthly_coins == null) {
+                          return (
+                            <span>
+                              {usado.toLocaleString("pt-BR")}
+                              <span className="text-muted-foreground/70"> livre</span>
+                            </span>
+                          );
+                        }
+                        const estourou = usado >= linha.monthly_coins;
+                        return (
+                          <span className={estourou ? "font-semibold text-destructive" : undefined}>
+                            {usado.toLocaleString("pt-BR")}
+                            <span className="text-muted-foreground">
+                              {" "}/ {linha.monthly_coins.toLocaleString("pt-BR")}
+                            </span>
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="tabular px-4 py-3">{c.member_count}</td>
                     <td className="tabular px-4 py-3 text-muted-foreground">
@@ -275,6 +337,15 @@ export default function Companies() {
                         >
                           <Pencil />
                           Editar
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setModulesFor(c)}
+                          aria-label={`Módulos de ${c.name}`}
+                        >
+                          <SlidersHorizontal />
+                          Módulos
                         </Button>
                         {activeCompany?.id === c.id ? (
                           <Badge variant="secondary">Em uso</Badge>
@@ -332,6 +403,12 @@ export default function Companies() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ModulesDialog
+        company={modulesFor}
+        open={!!modulesFor}
+        onOpenChange={(open) => !open && setModulesFor(null)}
+      />
     </div>
   );
 }

@@ -13,6 +13,8 @@ import {
 import * as evo from "../_shared/evolution.ts";
 import * as uaz from "../_shared/uazapi.ts";
 import * as owa from "../_shared/openwa.ts";
+import { hasFeature } from "../_shared/features.ts";
+import { consumeCoins } from "../_shared/usage.ts";
 
 // Cliente com service role. Sem os genéricos explícitos o ReturnType resolve
 // para os defaults (never) e não aceita o cliente real.
@@ -857,6 +859,173 @@ async function sendOffHoursNotice(
   });
 }
 
+type ContactFieldDef = { key: string; label: string; type: string; options: string[] };
+
+/**
+ * Ferramenta montada por empresa: os parâmetros são os campos que ela definiu
+ * (data do evento, vencimento, unidade...). Sem campos, a ferramenta não existe.
+ */
+function buildAtualizarDadosTool(defs: ContactFieldDef[]) {
+  const properties: Record<string, unknown> = {};
+  for (const d of defs) {
+    properties[d.key] = d.type === "select" && d.options.length > 0
+      ? { type: "string", enum: d.options, description: d.label }
+      : d.type === "number"
+      ? { type: "number", description: d.label }
+      : d.type === "date"
+      ? { type: "string", description: `${d.label}, no formato AAAA-MM-DD` }
+      : { type: "string", description: d.label };
+  }
+  return {
+    type: "function",
+    function: {
+      name: "atualizar_dados",
+      description:
+        "Grava no cadastro do lead um dado que ele acabou de informar na conversa (só os campos " +
+        "listados). Chame assim que o dado aparecer, sem perguntar de novo o que já está preenchido.",
+      parameters: { type: "object", properties },
+    },
+  };
+}
+
+type TagDef = { name: string; escalate: boolean };
+type RecordTypeRow = {
+  key: string; label: string; label_plural: string;
+  fields: Array<{ key: string; label: string; type: string }>;
+  date_field_key: string | null;
+};
+type ContactRecordRow = { type_key: string; title: string; fields: Record<string, unknown>; main_date: string | null };
+
+/** "Apólices: - Auto Honda (Seguradora: Porto; Vencimento: 2026-10-12)". */
+function recordsBrief(types: RecordTypeRow[], records: ContactRecordRow[]): string {
+  if (records.length === 0) return "";
+  const blocos: string[] = [];
+  for (const t of types) {
+    const lista = records.filter((r) => r.type_key === t.key);
+    if (lista.length === 0) continue;
+    const linhas = lista.map((r) => {
+      const campos = t.fields
+        .map((f) => {
+          const v = r.fields?.[f.key];
+          return v === null || v === undefined || v === "" ? null : `${f.label}: ${String(v)}`;
+        })
+        .filter(Boolean)
+        .join("; ");
+      return `- ${r.title}${campos ? ` (${campos})` : ""}`;
+    });
+    blocos.push(`${t.label_plural}:\n${linhas.join("\n")}`);
+  }
+  return blocos.length > 0 ? "\n\nRegistros deste lead:\n" + blocos.join("\n") : "";
+}
+type QuickReplyRow = { title: string; content: string };
+
+function buildMarcarEtiquetaTool(tags: TagDef[]) {
+  return {
+    type: "function",
+    function: {
+      name: "marcar_etiqueta",
+      description:
+        "Marca o lead com uma etiqueta da empresa quando a conversa deixar claro que ela se aplica " +
+        "(ex.: falou de sinistro, quer comprar em atacado, reclamou). Só as etiquetas listadas.",
+      parameters: {
+        type: "object",
+        properties: {
+          etiqueta: { type: "string", enum: tags.map((t) => t.name) },
+          motivo: { type: "string", description: "Em poucas palavras, o que na conversa justificou." },
+        },
+        required: ["etiqueta"],
+      },
+    },
+  };
+}
+
+function tagsBrief(tags: TagDef[], current: string[]): string {
+  if (tags.length === 0) return "";
+  const atuais = current.length > 0 ? current.join(", ") : "nenhuma";
+  const escalam = tags.filter((t) => t.escalate).map((t) => t.name);
+  return (
+    `\n\nEtiquetas deste lead: ${atuais}. Etiquetas disponíveis: ${tags.map((t) => t.name).join(", ")}.` +
+    (escalam.length > 0
+      ? ` Marcar ${escalam.join(" ou ")} chama uma pessoa da equipe na hora — use quando for o caso.`
+      : "")
+  );
+}
+
+function quickRepliesBrief(replies: QuickReplyRow[]): string {
+  if (replies.length === 0) return "";
+  return (
+    "\n\nInformações oficiais da empresa (use estas respostas, com suas palavras, quando o lead perguntar):\n" +
+    replies.map((r) => `- ${r.title}: ${r.content.replace(/\{\{[^}]*\}\}/g, "").trim()}`).join("\n")
+  );
+}
+
+function contactBrief(defs: ContactFieldDef[], values: Record<string, unknown>): string {
+  if (defs.length === 0) return "";
+  const linhas = defs.map((d) => {
+    const v = values?.[d.key];
+    const texto = v === null || v === undefined || v === "" ? "(não informado)" : String(v);
+    return `- ${d.label}: ${texto}`;
+  });
+  return (
+    "\n\nDados do cadastro deste lead:\n" + linhas.join("\n") +
+    "\nQuando ele informar um dado que está como (não informado), ou corrigir um, chame " +
+    "atualizar_dados. Aproveite a conversa para preencher o que falta, uma pergunta de cada vez, " +
+    "sem virar formulário."
+  );
+}
+
+const REGISTRAR_PEDIDO_TOOL = {
+  type: "function",
+  function: {
+    name: "registrar_pedido",
+    description:
+      "Registra o pedido que o cliente fez na conversa (itens e quantidades) e devolve o número. " +
+      "Chame quando o cliente confirmar o que quer; depois informe o número do pedido a ele. " +
+      "Não invente preço: deixe em branco o que não souber.",
+    parameters: {
+      type: "object",
+      properties: {
+        itens: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              nome: { type: "string" },
+              quantidade: { type: "number" },
+              preco: { type: "number", description: "unitário, em reais, só se souber" },
+            },
+            required: ["nome", "quantidade"],
+          },
+        },
+        endereco: { type: "string", description: "endereço de entrega, se for entrega" },
+        observacoes: { type: "string", description: "sem cebola, troco para 50, etc." },
+      },
+      required: ["itens"],
+    },
+  },
+};
+
+const ABRIR_CHAMADO_TOOL = {
+  type: "function",
+  function: {
+    name: "abrir_chamado",
+    description:
+      "Abre um chamado (protocolo) para uma solicitação, reclamação ou problema que o contato relatou, " +
+      "e devolve o número. Depois informe o protocolo a ele. Use prioridade 'urgente' só para " +
+      "risco imediato (vazamento grande, falta de luz, segurança).",
+    parameters: {
+      type: "object",
+      properties: {
+        titulo: { type: "string", description: "uma linha: o que é" },
+        categoria: { type: "string", description: "Manutenção, Financeiro, Segurança, Outro..." },
+        prioridade: { type: "string", enum: ["baixa", "normal", "alta", "urgente"] },
+        descricao: { type: "string", description: "detalhes que o contato deu" },
+      },
+      required: ["titulo"],
+    },
+  },
+};
+
 const CHAMAR_HUMANO_TOOL = {
   type: "function",
   function: {
@@ -881,6 +1050,109 @@ const CHAMAR_HUMANO_TOOL = {
 };
 
 // SDR IA: gera e envia a resposta automática quando habilitada para a empresa.
+/** Sete dias entre a pergunta e a resposta: depois disso, "10" é só um número. */
+const NPS_WINDOW_MS = 7 * 86_400_000;
+
+/**
+ * Resposta ao lembrete de compromisso: "1" confirma, "2" pede remarcação.
+ *
+ * Só vale nas 48h depois do lembrete e uma vez por compromisso — fora disso
+ * um "1" é conversa normal e segue para a IA. Devolve true quando consumiu.
+ */
+async function captureAppointmentReply(
+  supabase: Db,
+  config: WhatsappConfig,
+  contactId: string,
+  fromPhone: string,
+  content: string,
+): Promise<boolean> {
+  const reply = content.trim();
+  if (reply !== "1" && reply !== "2") return false;
+
+  const since = new Date(Date.now() - 48 * 3_600_000).toISOString();
+  const { data } = await supabase
+    .from("appointments")
+    .select("id, title, starts_at")
+    .eq("contact_id", contactId)
+    .eq("status", "scheduled")
+    .is("confirmation_reply", null)
+    .gte("reminder_sent_at", since)
+    .order("starts_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  const appt = data as { id: string; title: string; starts_at: string } | null;
+  if (!appt) return false;
+
+  await supabase
+    .from("appointments")
+    .update({
+      confirmation_reply: reply,
+      ...(reply === "1" ? { confirmed_at: new Date().toISOString() } : {}),
+    })
+    .eq("id", appt.id);
+
+  const quando = new Date(appt.starts_at).toLocaleString("pt-BR", {
+    day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo",
+  });
+  const text = reply === "1"
+    ? "Confirmado! Até lá. 👍"
+    : "Sem problema — alguém da equipe vai falar com você para remarcar.";
+
+  if (reply === "2") {
+    await registerHumanHandoff(supabase, contactId, `Quer remarcar: ${appt.title} (${quando})`);
+  }
+
+  const wamid = await sendWhatsappText(config, fromPhone, text);
+  if (wamid) {
+    await supabase.from("conversations").insert({
+      user_id: config.user_id,
+      company_id: config.company_id,
+      contact_id: contactId,
+      sender: "ai",
+      content: text,
+      channel: "whatsapp",
+      message_ref: wamid,
+      metadata: { deliveryStatus: "sent", appointmentReply: reply },
+    });
+  }
+  return true;
+}
+
+/**
+ * A resposta da pesquisa de NPS, quando ela é uma nota.
+ *
+ * Só conta se a empresa perguntou nos últimos dias e a mensagem é **apenas** o
+ * número. Aceitar "acho que 9" abriria a porta para transformar em nota o "10"
+ * de "10 unidades" — e o contato perderia a resposta de verdade, porque nota
+ * capturada encerra o turno e a IA não responde.
+ *
+ * Devolve true quando consumiu a mensagem.
+ */
+async function captureNpsScore(supabase: Db, contactId: string, content: string): Promise<boolean> {
+  const match = content.trim().match(/^(10|[0-9])$/);
+  if (!match) return false;
+
+  const { data } = await supabase
+    .from("contacts")
+    .select("nps_asked_at, nps_answered_at")
+    .eq("id", contactId)
+    .maybeSingle();
+  const row = data as { nps_asked_at?: string | null; nps_answered_at?: string | null } | null;
+
+  if (!row?.nps_asked_at || row.nps_answered_at) return false;
+  if (Date.now() - Date.parse(row.nps_asked_at) > NPS_WINDOW_MS) return false;
+
+  await supabase
+    .from("contacts")
+    .update({
+      nps_score: Number(match[1]),
+      nps_answered_at: new Date().toISOString(),
+    })
+    .eq("id", contactId);
+
+  return true;
+}
+
 async function maybeAiReply(
   supabase: Db,
   config: WhatsappConfig,
@@ -891,6 +1163,21 @@ async function maybeAiReply(
 ): Promise<void> {
   if (contact.ai_paused) return;
   if (!aiConfig?.enabled) return;
+
+  // SDR IA é módulo do plano. A checagem vem depois de `enabled` de propósito:
+  // empresa com a IA desligada não gasta uma consulta a mais por mensagem.
+  if (!(await hasFeature(supabase, config.company_id, "sdr"))) return;
+
+  // Cota do mês. A IA é o consumo que mais escapa: ela responde sozinha, dia e
+  // noite, e quem paga a OpenAI é a plataforma. Estourou, ela se cala — o lead
+  // fica na fila para um humano, que é melhor do que uma conta impagável.
+  const usage = await consumeCoins(supabase, config.company_id, "ai_reply", {
+    contactId: contact.id,
+  });
+  if (!usage.allowed) {
+    console.log("maybeAiReply: cota de coins esgotada", config.company_id);
+    return;
+  }
 
   // Negócio já fechado (Ganho ou Perdido): a etapa vale como resposta mesmo sem
   // ninguém do time ter escrito — é o caso do funil automático da 0024, que
@@ -932,6 +1219,60 @@ async function maybeAiReply(
   });
   const library = (libraryRaw ?? []) as LibraryAsset[];
 
+  // Campos personalizados: o que a empresa quer saber de cada lead. Entram no
+  // prompt e viram uma ferramenta para a IA preencher o que descobrir.
+  const [
+    { data: fieldDefsRaw }, { data: contactRow }, { data: tagsRaw }, { data: repliesRaw },
+    { data: recordTypesRaw }, { data: recordsRaw },
+  ] =
+    await Promise.all([
+      supabase
+        .from("contact_fields")
+        .select("key, label, type, options")
+        .eq("company_id", config.company_id)
+        .order("position"),
+      supabase.from("contacts").select("fields, tags").eq("id", contact.id).maybeSingle(),
+      supabase.from("contact_tags").select("name, escalate").eq("company_id", config.company_id).order("position"),
+      supabase.from("quick_replies").select("title, content").eq("company_id", config.company_id).order("position"),
+      supabase.from("record_types").select("key, label, label_plural, fields, date_field_key").eq("company_id", config.company_id).order("position"),
+      supabase.from("contact_records").select("type_key, title, fields, main_date").eq("contact_id", contact.id).order("main_date"),
+    ]);
+  const recordTypes = (recordTypesRaw ?? []) as RecordTypeRow[];
+  const contactRecords = (recordsRaw ?? []) as ContactRecordRow[];
+
+  // Pedidos e chamados: só quando o módulo está no pacote da empresa.
+  const [canOrders, canTickets] = await Promise.all([
+    hasFeature(supabase, config.company_id, "pedidos"),
+    hasFeature(supabase, config.company_id, "chamados"),
+  ]);
+  const [{ data: openOrdersRaw }, { data: openTicketsRaw }] = await Promise.all([
+    canOrders
+      ? supabase.from("crm_orders").select("number, status, items").eq("contact_id", contact.id)
+          .not("status", "in", "(entregue,cancelado)").order("created_at", { ascending: false }).limit(3)
+      : Promise.resolve({ data: null }),
+    canTickets
+      ? supabase.from("crm_tickets").select("number, status, title").eq("contact_id", contact.id)
+          .not("status", "in", "(resolvido,cancelado)").order("created_at", { ascending: false }).limit(3)
+      : Promise.resolve({ data: null }),
+  ]);
+  const openOrders = (openOrdersRaw ?? []) as Array<{ number: number; status: string; items: Array<{ name: string; qty: number }> }>;
+  const openTickets = (openTicketsRaw ?? []) as Array<{ number: number; status: string; title: string }>;
+  const opsBrief =
+    (openOrders.length > 0
+      ? "\n\nPedidos abertos deste lead: " +
+        openOrders.map((o) => `#${o.number} (${o.status}): ${(o.items ?? []).map((i) => `${i.qty}× ${i.name}`).join(", ")}`).join("; ")
+      : "") +
+    (openTickets.length > 0
+      ? "\n\nChamados abertos deste lead: " +
+        openTickets.map((t) => `#${t.number} (${t.status}): ${t.title}`).join("; ")
+      : "");
+  const fieldDefs = (fieldDefsRaw ?? []) as ContactFieldDef[];
+  const contactData = contactRow as { fields?: Record<string, unknown>; tags?: string[] } | null;
+  const fieldValues = contactData?.fields ?? {};
+  const contactTags: string[] = [...(contactData?.tags ?? [])];
+  const tagDefs = (tagsRaw ?? []) as TagDef[];
+  const quickReplies = (repliesRaw ?? []) as QuickReplyRow[];
+
   const libraryBrief = library.length > 0
     ? "\n\nArquivos que você pode enviar (use a ferramenta enviar_arquivo com o id):\n" +
       library.map((a) => `- ${a.id} · [${a.kind}] ${a.title}${a.description ? `: ${a.description}` : ""}`).join("\n") +
@@ -953,7 +1294,12 @@ async function maybeAiReply(
         "para abrir a tarefa de confirmação antes de responder. " +
         "Se ele pedir para falar com uma pessoa, reclamar, ou perguntar algo que você não pode " +
         "responder com segurança, chame chamar_humano em vez de improvisar." +
-        libraryBrief,
+        libraryBrief +
+        quickRepliesBrief(quickReplies) +
+        contactBrief(fieldDefs, fieldValues) +
+        recordsBrief(recordTypes, contactRecords) +
+        tagsBrief(tagDefs, contactTags) +
+        opsBrief,
     },
     ...((history ?? []) as Array<{ sender: string; content: string }>)
       .slice()
@@ -967,6 +1313,10 @@ async function maybeAiReply(
   const tools: Array<Record<string, unknown>> = [
     CONSULTAR_DATA_TOOL, CONSULTAR_AGENDA_TOOL, REGISTRAR_AGENDAMENTO_TOOL, CHAMAR_HUMANO_TOOL,
   ];
+  if (fieldDefs.length > 0) tools.push(buildAtualizarDadosTool(fieldDefs));
+  if (tagDefs.length > 0) tools.push(buildMarcarEtiquetaTool(tagDefs));
+  if (canOrders) tools.push(REGISTRAR_PEDIDO_TOOL);
+  if (canTickets) tools.push(ABRIR_CHAMADO_TOOL);
   if (library.length > 0) {
     tools.push({
         type: "function",
@@ -1134,6 +1484,157 @@ async function maybeAiReply(
         continue;
       }
 
+      if (call?.function?.name === "atualizar_dados") {
+        const args = JSON.parse(call.function.arguments || "{}") as Record<string, unknown>;
+        // Só chaves conhecidas e só valores preenchidos: o modelo às vezes
+        // manda o objeto inteiro com null no que não descobriu.
+        const patch: Record<string, unknown> = {};
+        for (const d of fieldDefs) {
+          const v = args[d.key];
+          if (v === null || v === undefined || v === "") continue;
+          if (d.type === "select" && d.options.length > 0 && !d.options.includes(String(v))) continue;
+          if (d.type === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(String(v))) continue;
+          patch[d.key] = d.type === "number" ? Number(v) : String(v);
+        }
+        let result: Record<string, unknown>;
+        if (Object.keys(patch).length === 0) {
+          result = { erro: "nenhum dado válido para gravar" };
+        } else {
+          Object.assign(fieldValues, patch);
+          const { error } = await supabase
+            .from("contacts")
+            .update({ fields: fieldValues })
+            .eq("id", contact.id);
+          result = error ? { erro: error.message } : { ok: true, gravado: Object.keys(patch) };
+        }
+        messages.push({
+          role: "assistant",
+          content: choice.content ?? null,
+          tool_calls: choice.tool_calls,
+        });
+        messages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: JSON.stringify(result),
+        });
+        continue;
+      }
+
+      if (call?.function?.name === "registrar_pedido") {
+        const args = JSON.parse(call.function.arguments || "{}") as {
+          itens?: Array<{ nome?: string; quantidade?: number; preco?: number }>;
+          endereco?: string; observacoes?: string;
+        };
+        const items = (args.itens ?? [])
+          .map((i) => ({
+            name: String(i.nome ?? "").trim(),
+            qty: Math.max(1, Math.round(Number(i.quantidade) || 1)),
+            price: typeof i.preco === "number" && Number.isFinite(i.preco) ? i.preco : null,
+          }))
+          .filter((i) => i.name);
+        let result: Record<string, unknown>;
+        if (items.length === 0) {
+          result = { erro: "nenhum item" };
+        } else {
+          const priced = items.filter((i) => i.price !== null);
+          const total = priced.length > 0
+            ? Math.round(priced.reduce((sum, i) => sum + (i.price as number) * i.qty, 0) * 100) / 100
+            : null;
+          const { data: created, error } = await supabase
+            .from("crm_orders")
+            .insert({
+              company_id: config.company_id,
+              contact_id: contact.id,
+              items,
+              total,
+              delivery_address: args.endereco?.trim() || null,
+              notes: args.observacoes?.trim() || null,
+              created_by: "ai",
+            })
+            .select("number")
+            .maybeSingle();
+          result = error
+            ? { erro: error.message }
+            : { ok: true, numero: (created as { number?: number } | null)?.number, total };
+        }
+        messages.push({ role: "assistant", content: choice.content ?? null, tool_calls: choice.tool_calls });
+        messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+        continue;
+      }
+
+      if (call?.function?.name === "abrir_chamado") {
+        const args = JSON.parse(call.function.arguments || "{}") as {
+          titulo?: string; categoria?: string; prioridade?: string; descricao?: string;
+        };
+        const titulo = args.titulo?.trim();
+        let result: Record<string, unknown>;
+        if (!titulo) {
+          result = { erro: "título vazio" };
+        } else {
+          const prioridade = ["baixa", "normal", "alta", "urgente"].includes(args.prioridade ?? "")
+            ? args.prioridade
+            : "normal";
+          const { data: created, error } = await supabase
+            .from("crm_tickets")
+            .insert({
+              company_id: config.company_id,
+              contact_id: contact.id,
+              title: titulo.slice(0, 200),
+              category: args.categoria?.trim() || null,
+              priority: prioridade,
+              description: args.descricao?.trim() || null,
+              created_by: "ai",
+            })
+            .select("number")
+            .maybeSingle();
+          result = error
+            ? { erro: error.message }
+            : { ok: true, protocolo: (created as { number?: number } | null)?.number };
+          // Urgente é gente: a IA registra e a equipe assume.
+          if (!error && prioridade === "urgente") {
+            await registerHumanHandoff(supabase, contact.id, `Chamado urgente: ${titulo}`);
+          }
+        }
+        messages.push({ role: "assistant", content: choice.content ?? null, tool_calls: choice.tool_calls });
+        messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+        continue;
+      }
+
+      if (call?.function?.name === "marcar_etiqueta") {
+        const args = JSON.parse(call.function.arguments || "{}") as { etiqueta?: string; motivo?: string };
+        const def = tagDefs.find((t) => t.name === args.etiqueta);
+        let result: Record<string, unknown>;
+        if (!def) {
+          result = { erro: "etiqueta desconhecida" };
+        } else {
+          if (!contactTags.includes(def.name)) {
+            contactTags.push(def.name);
+            const { error } = await supabase
+              .from("contacts")
+              .update({ tags: contactTags })
+              .eq("id", contact.id);
+            if (error) console.error("marcar_etiqueta falhou", error.message);
+          }
+          result = { ok: true, etiqueta: def.name };
+          // Etiqueta que escala: a conversa vira de gente agora.
+          if (def.escalate) {
+            const motivo = `Etiqueta "${def.name}"${args.motivo ? `: ${args.motivo}` : ""}`;
+            Object.assign(result, await registerHumanHandoff(supabase, contact.id, motivo));
+          }
+        }
+        messages.push({
+          role: "assistant",
+          content: choice.content ?? null,
+          tool_calls: choice.tool_calls,
+        });
+        messages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: JSON.stringify(result),
+        });
+        continue;
+      }
+
       if (call?.function?.name === "chamar_humano") {
         const args = JSON.parse(call.function.arguments || "{}") as { motivo?: string };
         const result = await registerHumanHandoff(supabase, contact.id, args.motivo ?? "");
@@ -1275,6 +1776,11 @@ async function processChange(
         wa_timestamp: msg.timestamp ?? null,
       },
     });
+
+    // Resposta de pesquisa: "9" vira nota, não conversa.
+    if (content && (await captureNpsScore(supabase, contact.id, content))) continue;
+    // Resposta ao lembrete de compromisso: "1" confirma, "2" pede remarcação.
+    if (content && (await captureAppointmentReply(supabase, config, contact.id, msg.from, content))) continue;
 
     // Texto e áudio transcrito seguem para o SDR: nos dois casos existe uma
     // frase real do lead para responder. Imagem e documento ficam com o humano.
@@ -1729,7 +2235,16 @@ Deno.serve(async (req: Request) => {
         return json({ ok: true, ignored: "sessão desconhecida" });
       }
 
-      const value = owa.normalizeWebhook(payload);
+      // O WhatsApp entrega o chat como @lid, que não é telefone. Traduzir aqui
+      // (uma chamada por evento, no endpoint por contato, que é rápido) é o que
+      // faz o contato nascer com o número certo — e é o número certo que a IA
+      // usa para responder.
+      const jid = owa.counterpartJid(payload);
+      const resolved = jid?.endsWith("@lid") && config.instance_id
+        ? await owa.resolveLid(owaTarget(config), config.instance_id, jid)
+        : {};
+
+      const value = owa.normalizeWebhook(payload, resolved);
       if (value.messages.length === 0 && value.message_echoes.length === 0) {
         // Pode ser evento de sessão (qr, status) ou uma mensagem num formato que
         // ainda não sabemos ler. O payload cru fica no log: é por ele que o

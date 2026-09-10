@@ -12,8 +12,12 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import {
   useUpdateContactMutation, useDeleteContactMutation, useCreateAppointmentMutation, usePipelineStagesQuery,
+  useContactFieldsQuery,
 } from "@/hooks/queries";
-import { getStageLabel, getStageTone, type Contact } from "@/lib/types";
+import { getStageLabel, getStageTone, type Contact, type ContactFieldValue } from "@/lib/types";
+import ContactFieldsForm from "@/components/contacts/ContactFieldsForm";
+import TagPicker from "@/components/contacts/TagPicker";
+import ContactRecords from "@/components/contacts/ContactRecords";
 import { cn } from "@/lib/utils";
 
 interface ContactDetailModalProps {
@@ -29,10 +33,14 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
   const deleteContact = useDeleteContactMutation();
   const createAppointment = useCreateAppointmentMutation();
   const { data: stages = [] } = usePipelineStagesQuery(company?.id);
+  const { data: fieldDefs = [] } = useContactFieldsQuery(company?.id);
 
   const [name, setName] = useState("");
+  const [fieldValues, setFieldValues] = useState<Record<string, ContactFieldValue>>({});
+  const [tags, setTags] = useState<string[]>([]);
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const [stage, setStage] = useState("new");
   const [notes, setNotes] = useState("");
   const [apptTitle, setApptTitle] = useState("");
@@ -43,8 +51,11 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
     setName(contact.name);
     setPhone(contact.phone ?? "");
     setEmail(contact.email ?? "");
+    setBirthDate(contact.birth_date ?? "");
     setStage(contact.stage);
     setNotes(contact.notes ?? "");
+    setFieldValues({ ...(contact.fields ?? {}) });
+    setTags([...(contact.tags ?? [])]);
     setApptTitle("");
     setApptStartsAt("");
   }, [contact]);
@@ -59,8 +70,11 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
         name: name.trim() || contact.name,
         phone: phone.trim() || null,
         email: email.trim() || null,
+        birth_date: birthDate || null,
         stage,
         notes: notes.trim() || null,
+        fields: fieldValues,
+        tags,
       });
       toast.success("Contato salvo");
       onClose();
@@ -158,6 +172,20 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
               <Label>E-mail</Label>
               <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
+            <div className="space-y-1.5">
+              <Label>Data de nascimento</Label>
+              <Input
+                type="date"
+                value={birthDate}
+                onChange={(e) => setBirthDate(e.target.value)}
+              />
+              {/* Só o dia e o mês são usados: é o gatilho da régua de aniversário. */}
+              <p className="text-xs text-muted-foreground">Usada pela régua de aniversário</p>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Etiquetas</Label>
+            <TagPicker value={tags} onChange={setTags} />
           </div>
           <div className="space-y-1.5">
             <Label>Etapa do funil</Label>
@@ -173,6 +201,22 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          {fieldDefs.length > 0 && (
+            <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Dados do negócio
+              </p>
+              <ContactFieldsForm
+                fields={fieldDefs}
+                values={fieldValues}
+                onChange={(key, value) => setFieldValues((p) => ({ ...p, [key]: value }))}
+              />
+            </div>
+          )}
+          {/* Registros salvam sozinhos: não passam pelo botão Salvar do contato. */}
+          <div className="space-y-4">
+            <ContactRecords contact={contact} />
           </div>
           <div className="space-y-1.5">
             <Label>Notas</Label>

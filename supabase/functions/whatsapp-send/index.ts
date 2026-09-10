@@ -16,6 +16,7 @@ import { resolveCompanyId } from "../_shared/company.ts";
 import * as evo from "../_shared/evolution.ts";
 import * as uaz from "../_shared/uazapi.ts";
 import * as owa from "../_shared/openwa.ts";
+import { consumeCoins, limitReachedMessage } from "../_shared/usage.ts";
 import {
   buildTemplatePayload,
   renderTemplateText,
@@ -101,6 +102,15 @@ Deno.serve(async (req: Request) => {
         metadata: { ...metadata, deliveryStatus: "sent" },
       });
     };
+
+    // Cobra a cota antes de enviar, em qualquer provedor. Depois do envio a
+    // mensagem já saiu e o limite não teria servido para nada.
+    if (action === "send-text" || action === "send-media" || action === "send-template") {
+      const usage = await consumeCoins(supabaseAdmin, companyId, "whatsapp_out", {
+        contactId: (body.contact_id as string | undefined) ?? null,
+      });
+      if (!usage.allowed) return json({ success: false, error: limitReachedMessage(usage) }, 200);
+    }
 
     if (config.provider === "openwa") {
       // A chave do painel abre todas as sessões de todas as empresas: fica em

@@ -41,8 +41,150 @@ export interface Contact {
   closing_signal_excerpt: string | null;
   /** "pagamento" quando o dinheiro apareceu na conversa; "intencao" quando só foi promessa. */
   closing_signal_type: "pagamento" | "intencao" | null;
+  /** Só o dia e o mês importam: é o que a régua de aniversário usa. */
+  birth_date: string | null;
+  /** Nota de 0 a 10 que o cliente respondeu no WhatsApp. */
+  nps_score: number | null;
+  nps_asked_at: string | null;
+  nps_answered_at: string | null;
+  /** Campos personalizados (contact_fields), indexados pela chave. */
+  fields: Record<string, ContactFieldValue>;
+  /** Nomes das etiquetas (contact_tags). */
+  tags: string[];
   created_at: string;
   updated_at: string;
+}
+
+/** O mínimo que um formulário de campos precisa (contact_fields ou record_types.fields). */
+export type FieldDef = Pick<ContactField, "key" | "label" | "type" | "options">;
+
+/**
+ * Tipo de sub-registro do contato: Apólice, Pacote de sessões, Unidade.
+ * Descreve os campos e diz qual é a data principal.
+ */
+export interface RecordType {
+  id: string;
+  company_id: string;
+  key: string;
+  label: string;
+  label_plural: string;
+  fields: FieldDef[];
+  /** Campo (type = date) que vira main_date dos registros. */
+  date_field_key: string | null;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Um registro de um contato: uma apólice, um pacote, uma unidade. */
+export interface ContactRecord {
+  id: string;
+  company_id: string;
+  contact_id: string;
+  type_key: string;
+  title: string;
+  fields: Record<string, ContactFieldValue>;
+  /** Cópia de fields[date_field_key], mantida por trigger. */
+  main_date: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Etiqueta do catálogo da empresa: VIP, Atacado, Sinistro... */
+export interface ContactTag {
+  id: string;
+  company_id: string;
+  name: string;
+  tone: StageTone;
+  /** Aplicada pela IA, pausa a conversa e chama uma pessoa. */
+  escalate: boolean;
+  position: number;
+  created_at: string;
+}
+
+/** Resposta pronta do chat: "/" + atalho. */
+export interface QuickReply {
+  id: string;
+  company_id: string;
+  shortcut: string;
+  title: string;
+  /** Aceita {{nome}} e {{primeiro_nome}}. */
+  content: string;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ContactFieldValue = string | number | null;
+export type ContactFieldType = "text" | "number" | "date" | "select";
+
+/** Campo extra do contato, definido pela empresa (ou pelo modelo do nicho). */
+export interface ContactField {
+  id: string;
+  company_id: string;
+  /** Chave em contacts.fields. Imutável depois de criada. */
+  key: string;
+  label: string;
+  type: ContactFieldType;
+  /** Só para type = "select". */
+  options: string[];
+  /** Aparece no card do Pipeline e no painel do Chat. */
+  show_on_card: boolean;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Telefone legível: 559984573986 -> (99) 98457-3986.
+ *
+ * Só formata o que parece telefone. Contato criado antes da tradução do @lid
+ * tem 15 dígitos no lugar do número — enfeitar aquilo de parênteses faria um id
+ * opaco passar por telefone de verdade.
+ */
+export function formatPhone(raw: string | null | undefined): string | null {
+  const digits = (raw ?? "").replace(/\D/g, "");
+  if (!digits) return null;
+
+  const local = digits.startsWith("55") ? digits.slice(2) : digits;
+  if (local.length === 11) return `(${local.slice(0, 2)}) ${local.slice(2, 7)}-${local.slice(7)}`;
+  if (local.length === 10) return `(${local.slice(0, 2)}) ${local.slice(2, 6)}-${local.slice(6)}`;
+  return raw ?? null;
+}
+
+/**
+ * O que escrever como nome do contato.
+ *
+ * Quem chega pelo WhatsApp sem nome na agenda nasce com o próprio telefone no
+ * lugar do nome — e a tela repetia o mesmo número duas vezes, como título e
+ * como subtítulo. Aqui o número vira telefone formatado uma vez só.
+ */
+export function contactLabel(contact: Pick<Contact, "name" | "phone">): string {
+  const name = contact.name?.trim() ?? "";
+  const soDigitos = /^\d+$/.test(name);
+  if (name && !soDigitos) return name;
+  return formatPhone(contact.phone) ?? (name || "Sem nome");
+}
+
+/** O telefone, quando ele já não é o próprio título. */
+export function contactSubtitle(contact: Pick<Contact, "name" | "phone">): string | null {
+  const phone = formatPhone(contact.phone);
+  if (!phone) return null;
+  return contactLabel(contact) === phone ? null : phone;
+}
+
+/**
+ * A letra do avatar.
+ *
+ * Com o telefone virando título, `charAt(0)` passou a devolver "(" — todo
+ * contato sem nome ficava com um parêntese no círculo. Sem letra no nome, o
+ * primeiro dígito do número serve melhor: distingue os contatos entre si.
+ */
+export function contactInitial(contact: Pick<Contact, "name" | "phone">): string {
+  const letra = (contact.name ?? "").match(/\p{L}/u);
+  if (letra) return letra[0].toUpperCase();
+  const digito = (contact.phone ?? contact.name ?? "").replace(/\D/g, "");
+  return digito ? digito.slice(-4, -3) || digito[0] : "?";
 }
 
 /** Recortes de contato que viram lista de disparo. */
@@ -91,7 +233,22 @@ export interface Conversation {
   created_at: string;
 }
 
-export type AppointmentKind = "meeting" | "call" | "visit" | "followup" | "other";
+/**
+ * Tipo do compromisso. Os cinco base são fixos; a empresa pode ter outros
+ * (appointment_kinds), vindos do modelo do nicho — por isso é string.
+ */
+export type AppointmentKind = string;
+
+/** Tipo de compromisso extra da empresa (degustação, consulta, assembleia...). */
+export interface AppointmentKindDef {
+  id: string;
+  company_id: string;
+  key: string;
+  label: string;
+  tone: StageTone;
+  position: number;
+  created_at: string;
+}
 /** pending = pedido do lead que o SDR IA registrou, aguardando confirmação. */
 export type AppointmentStatus = "pending" | "scheduled" | "done" | "canceled";
 
@@ -112,9 +269,128 @@ export interface Appointment {
   /** Evento correspondente no Google Calendar. Nulo = só existe no CRM. */
   google_event_id: string | null;
   google_synced_at: string | null;
+  /** Profissional, sala ou equipamento que o compromisso ocupa. */
+  resource_id: string | null;
+  /** Lembrete do dia anterior: quando saiu, e o que o cliente respondeu. */
+  reminder_sent_at: string | null;
+  confirmed_at: string | null;
+  confirmation_reply: string | null;
   created_at: string;
   updated_at: string;
 }
+
+/** Quem ou o que atende: a profissional, a sala, o laser. */
+export interface Resource {
+  id: string;
+  company_id: string;
+  name: string;
+  kind: "profissional" | "sala" | "equipamento" | "outro";
+  active: boolean;
+  position: number;
+  created_at: string;
+}
+
+export const RESOURCE_KINDS: Array<{ id: Resource["kind"]; label: string }> = [
+  { id: "profissional", label: "Profissional" },
+  { id: "sala", label: "Sala" },
+  { id: "equipamento", label: "Equipamento" },
+  { id: "outro", label: "Outro" },
+];
+
+/** Quem espera um horário. */
+export interface WaitlistEntry {
+  id: string;
+  company_id: string;
+  contact_id: string;
+  resource_id: string | null;
+  notes: string | null;
+  status: "aguardando" | "atendido" | "cancelado";
+  created_at: string;
+}
+
+// ── Pedidos ─────────────────────────────────────────────────────────────────
+
+export type OrderStatus = "recebido" | "preparo" | "saiu" | "entregue" | "cancelado";
+
+export interface OrderItem {
+  name: string;
+  qty: number;
+  /** Unitário. Null quando a IA registrou sem saber o preço. */
+  price: number | null;
+}
+
+export interface Order {
+  id: string;
+  company_id: string;
+  contact_id: string | null;
+  number: number;
+  items: OrderItem[];
+  total: number | null;
+  status: OrderStatus;
+  delivery_address: string | null;
+  notes: string | null;
+  created_by: "user" | "ai";
+  created_at: string;
+  updated_at: string;
+}
+
+export const ORDER_STATUSES: Array<{ id: OrderStatus; label: string; badge: string }> = [
+  { id: "recebido", label: "Recebido", badge: "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300" },
+  { id: "preparo", label: "Em preparo", badge: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300" },
+  { id: "saiu", label: "Saiu para entrega", badge: "border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950 dark:text-violet-300" },
+  { id: "entregue", label: "Entregue", badge: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" },
+  { id: "cancelado", label: "Cancelado", badge: "border-border text-muted-foreground" },
+];
+
+/** Soma dos itens com preço. Null quando nenhum item tem preço. */
+export function orderTotal(items: OrderItem[]): number | null {
+  let total = 0;
+  let any = false;
+  for (const i of items) {
+    if (i.price === null || i.price === undefined) continue;
+    total += i.price * (Number(i.qty) || 1);
+    any = true;
+  }
+  return any ? Math.round(total * 100) / 100 : null;
+}
+
+// ── Chamados ────────────────────────────────────────────────────────────────
+
+export type TicketStatus = "aberto" | "em_andamento" | "aguardando" | "resolvido" | "cancelado";
+export type TicketPriority = "baixa" | "normal" | "alta" | "urgente";
+
+export interface Ticket {
+  id: string;
+  company_id: string;
+  contact_id: string | null;
+  number: number;
+  title: string;
+  description: string | null;
+  category: string | null;
+  status: TicketStatus;
+  priority: TicketPriority;
+  assigned_to: string | null;
+  due_at: string | null;
+  resolved_at: string | null;
+  created_by: "user" | "ai";
+  created_at: string;
+  updated_at: string;
+}
+
+export const TICKET_STATUSES: Array<{ id: TicketStatus; label: string; badge: string }> = [
+  { id: "aberto", label: "Aberto", badge: "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300" },
+  { id: "em_andamento", label: "Em andamento", badge: "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950 dark:text-indigo-300" },
+  { id: "aguardando", label: "Aguardando", badge: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300" },
+  { id: "resolvido", label: "Resolvido", badge: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" },
+  { id: "cancelado", label: "Encerrado", badge: "border-border text-muted-foreground" },
+];
+
+export const TICKET_PRIORITIES: Array<{ id: TicketPriority; label: string; badge: string }> = [
+  { id: "baixa", label: "Baixa", badge: "border-border text-muted-foreground" },
+  { id: "normal", label: "Normal", badge: "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300" },
+  { id: "alta", label: "Alta", badge: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300" },
+  { id: "urgente", label: "Urgente", badge: "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-300" },
+];
 
 /** Estado da conexão com o Google Agenda, vindo da edge function. */
 export interface GoogleCalendarStatus {
@@ -188,6 +464,74 @@ export interface AiConfig {
   reply_skip_weekends: boolean;
   /** Aviso mandado uma vez a cada 12h fora do horário. Null = silêncio total. */
   reply_offhours_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Nicho de mercado da empresa — define o pacote de módulos que ela recebe. */
+export interface Niche {
+  key: string;
+  name: string;
+  description: string | null;
+  position: number;
+}
+
+/** Um módulo do produto, já resolvido para uma empresa (ver company_feature_set). */
+export interface CompanyFeature {
+  feature_key: string;
+  label: string;
+  route: string | null;
+  /** Core não pode ser desligado: é o produto (Pipeline, Contatos, Chat). */
+  core: boolean;
+  enabled: boolean;
+}
+
+/** Cota de envios da empresa. Sem linha = ilimitado (o consumo segue medido). */
+export interface CompanyPlan {
+  company_id: string;
+  monthly_coins: number;
+  /** true = passa do teto e vira pós-pago; false = bloqueia o envio. */
+  allow_overage: boolean;
+}
+
+/** Consumo do mês corrente, já somado pelo banco. */
+export interface CompanyUsage {
+  used: number;
+  /** Null quando a empresa não tem plano definido. */
+  monthly_coins: number | null;
+  allow_overage: boolean;
+  remaining: number | null;
+  period_start: string;
+}
+
+/** As três fixas mais "data", que dispara a partir de um campo de data do contato. */
+export type RelationshipKind = "aniversario" | "reativacao" | "nps" | "data" | "agenda";
+
+/**
+ * Régua de relacionamento: falar com quem já é cliente sem ninguém lembrar.
+ *
+ * Diferente do follow-up, que cobra quem sumiu no meio da conversa: aqui o
+ * gatilho é uma data, um tempo parado ou um negócio fechado.
+ */
+export interface RelationshipRule {
+  id: string;
+  company_id: string;
+  kind: RelationshipKind;
+  enabled: boolean;
+  /** Aceita {{nome}} e {{primeiro_nome}}. */
+  message: string;
+  /** reativacao: dias parado que disparam a mensagem. */
+  inactive_days: number;
+  /** nps: dias depois de fechar até perguntar. */
+  ask_after_days: number;
+  /** Silêncio entre dois envios da mesma régua para o mesmo contato. */
+  cooldown_days: number;
+  /** data: nome que aparece na tela e nos envios. */
+  title: string | null;
+  /** data: chave do campo (contact_fields, type = date). */
+  field_key: string | null;
+  /** data: negativo = dias antes; positivo = depois; 0 = no dia. */
+  offset_days: number;
   created_at: string;
   updated_at: string;
 }
@@ -311,6 +655,8 @@ export interface CampaignTarget {
 export interface Company {
   id: string;
   name: string;
+  /** Nicho: define o pacote de módulos. Null = tudo liberado. */
+  niche_key: string | null;
   created_at: string;
   updated_at: string;
 }

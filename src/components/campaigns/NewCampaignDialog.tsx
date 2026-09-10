@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Loader2, Search, Send, Sparkles } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import {
-  useContactsQuery, useWhatsappTemplatesQuery, usePipelineStagesQuery, useWhatsappConfigQuery,
+  useContactsQuery, useWhatsappTemplatesQuery, usePipelineStagesQuery,
+  useContactTagsQuery, useWhatsappConfigQuery,
 } from "@/hooks/queries";
 import type { CreateCampaignInput } from "@/hooks/queries";
 import {
@@ -52,6 +53,7 @@ export default function NewCampaignDialog({
   const { company } = useAuth();
   const { data: contacts = [] } = useContactsQuery(company?.id);
   const { data: stages = [] } = usePipelineStagesQuery(company?.id);
+  const { data: tagCatalog = [] } = useContactTagsQuery(company?.id);
   const { data: templates = [], isPending: templatesLoading, error: templatesError } =
     useWhatsappTemplatesQuery(company?.id);
   const { data: waConfig } = useWhatsappConfigQuery(company?.id);
@@ -67,6 +69,7 @@ export default function NewCampaignDialog({
   const [mediaUrl, setMediaUrl] = useState("");
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
+  const [tagFilter, setTagFilter] = useState("all");
   const [smartFilter, setSmartFilter] = useState<ContactFilter>("all");
   const [flowId, setFlowId] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -97,11 +100,12 @@ export default function NewCampaignDialog({
     const term = search.trim().toLowerCase();
     return eligible.filter((c) => {
       if (stageFilter !== "all" && c.stage !== stageFilter) return false;
+      if (tagFilter !== "all" && !c.tags?.includes(tagFilter)) return false;
       if (!matchesContactFilter(c, smartFilter)) return false;
       if (!term) return true;
       return c.name.toLowerCase().includes(term) || (c.phone ?? "").includes(term);
     });
-  }, [eligible, search, stageFilter, smartFilter]);
+  }, [eligible, search, stageFilter, tagFilter, smartFilter]);
 
   useEffect(() => {
     if (!template) return;
@@ -402,6 +406,21 @@ export default function NewCampaignDialog({
                   ))}
                 </SelectContent>
               </Select>
+              {tagCatalog.length > 0 && (
+                <Select value={tagFilter} onValueChange={setTagFilter}>
+                  <SelectTrigger className="sm:w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas as etiquetas</SelectItem>
+                    {tagCatalog.map((t) => (
+                      <SelectItem key={t.id} value={t.name}>
+                        {t.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Select value={smartFilter} onValueChange={(v) => setSmartFilter(v as ContactFilter)}>
                 <SelectTrigger className="sm:w-56">
                   <SelectValue />

@@ -1,13 +1,22 @@
 import { useMemo, useState } from "react";
-import { BadgeCheck, Plus, Search, Users } from "lucide-react";
+import { BadgeCheck, Layers, Plus, Search, SlidersHorizontal, Tag, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import { useContactsQuery, useCreateContactMutation, usePipelineStagesQuery } from "@/hooks/queries";
+import {
+  useContactsQuery, useCreateContactMutation, usePipelineStagesQuery, useContactTagsQuery,
+  useRecordTypesQuery,
+} from "@/hooks/queries";
 import {
   CONTACT_FILTERS, getStageLabel, getStageTone, matchesContactFilter,
   type Contact, type ContactFilter,
 } from "@/lib/types";
 import ContactDetailModal from "@/components/contacts/ContactDetailModal";
+import ContactFieldsDialog from "@/components/contacts/ContactFieldsDialog";
+import TagsDialog from "@/components/contacts/TagsDialog";
+import RecordTypesDialog from "@/components/contacts/RecordTypesDialog";
+import RecordsTable from "@/components/contacts/RecordsTable";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TagBadge } from "@/components/contacts/TagPicker";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,12 +49,22 @@ export default function Contacts() {
   const [smartFilter, setSmartFilter] = useState<ContactFilter>("all");
   const [selected, setSelected] = useState<Contact | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [fieldsOpen, setFieldsOpen] = useState(false);
+  const [tagsOpen, setTagsOpen] = useState(false);
+  const [recordTypesOpen, setRecordTypesOpen] = useState(false);
+  // "contatos" ou a chave de um tipo de registro (apólices, pacotes...).
+  const [view, setView] = useState("contatos");
+  const { data: recordTypes = [] } = useRecordTypesQuery(company?.id);
+  const recordView = recordTypes.find((t) => t.key === view) ?? null;
+  const [tagFilter, setTagFilter] = useState("all");
+  const { data: tagCatalog = [] } = useContactTagsQuery(company?.id);
   const [form, setForm] = useState({ name: "", phone: "", email: "" });
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return contacts.filter((c) => {
       if (stageFilter !== "all" && c.stage !== stageFilter) return false;
+      if (tagFilter !== "all" && !c.tags?.includes(tagFilter)) return false;
       if (!matchesContactFilter(c, smartFilter)) return false;
       if (!term) return true;
       return (
@@ -54,7 +73,7 @@ export default function Contacts() {
         c.email?.toLowerCase().includes(term)
       );
     });
-  }, [contacts, search, stageFilter, smartFilter]);
+  }, [contacts, search, stageFilter, tagFilter, smartFilter]);
 
   const smartFilterHint = CONTACT_FILTERS.find((f) => f.id === smartFilter)?.hint;
 
@@ -90,40 +109,74 @@ export default function Contacts() {
             : `${filtered.length} de ${contacts.length} contatos`
         }
         actions={
-          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus />
-                Novo contato
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-sm">
-              <DialogHeader>
-                <DialogTitle>Novo contato</DialogTitle>
-                <DialogDescription>Cadastre um contato manualmente.</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <Label>Nome</Label>
-                  <Input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Telefone</Label>
-                  <Input value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>E-mail</Label>
-                  <Input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} />
-                </div>
-                <Button className="w-full" onClick={handleCreate} disabled={createContact.isPending}>
-                  {createContact.isPending ? "Criando..." : "Criar"}
+          <>
+            <Button variant="outline" onClick={() => setRecordTypesOpen(true)}>
+              <Layers />
+              Registros
+            </Button>
+            <Button variant="outline" onClick={() => setTagsOpen(true)}>
+              <Tag />
+              Etiquetas
+            </Button>
+            <Button variant="outline" onClick={() => setFieldsOpen(true)}>
+              <SlidersHorizontal />
+              Campos
+            </Button>
+            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus />
+                  Novo contato
                 </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </DialogTrigger>
+              <DialogContent className="max-w-sm">
+                <DialogHeader>
+                  <DialogTitle>Novo contato</DialogTitle>
+                  <DialogDescription>Cadastre um contato manualmente.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label>Nome</Label>
+                    <Input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Telefone</Label>
+                    <Input value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>E-mail</Label>
+                    <Input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} />
+                  </div>
+                  <Button className="w-full" onClick={handleCreate} disabled={createContact.isPending}>
+                    {createContact.isPending ? "Criando..." : "Criar"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </>
         }
       />
 
+      {recordTypes.length > 0 && (
+        <Tabs value={view} onValueChange={setView} className="mb-4">
+          <TabsList>
+            <TabsTrigger value="contatos">
+              <Users />
+              Contatos
+            </TabsTrigger>
+            {recordTypes.map((t) => (
+              <TabsTrigger key={t.key} value={t.key}>
+                {t.label_plural}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      )}
+
+      {recordView ? (
+        <RecordsTable type={recordView} onOpenContact={setSelected} />
+      ) : (
+        <>
       <div className="mb-4 flex flex-col gap-3 sm:flex-row">
         <div className="relative flex-1 sm:max-w-sm">
           <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -147,6 +200,21 @@ export default function Contacts() {
             ))}
           </SelectContent>
         </Select>
+        {tagCatalog.length > 0 && (
+          <Select value={tagFilter} onValueChange={setTagFilter}>
+            <SelectTrigger className="sm:w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas as etiquetas</SelectItem>
+              {tagCatalog.map((t) => (
+                <SelectItem key={t.id} value={t.name}>
+                  {t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Select value={smartFilter} onValueChange={(v) => setSmartFilter(v as ContactFilter)}>
           <SelectTrigger className="sm:w-64">
             <SelectValue />
@@ -210,6 +278,14 @@ export default function Contacts() {
                           {contact.name.trim().charAt(0).toUpperCase() || "?"}
                         </span>
                         <span className="font-medium">{contact.name}</span>
+                        {contact.tags?.slice(0, 3).map((name) => (
+                          <TagBadge
+                            key={name}
+                            name={name}
+                            tone={tagCatalog.find((t) => t.name === name)?.tone}
+                            className="shrink-0"
+                          />
+                        ))}
                         {contact.closing_signal_at && (
                           <Badge
                             variant="outline"
@@ -242,7 +318,12 @@ export default function Contacts() {
           </table>
         </div>
       </div>
+        </>
+      )}
 
+      <ContactFieldsDialog open={fieldsOpen} onOpenChange={setFieldsOpen} />
+      <RecordTypesDialog open={recordTypesOpen} onOpenChange={setRecordTypesOpen} />
+      <TagsDialog open={tagsOpen} onOpenChange={setTagsOpen} />
       <ContactDetailModal contact={selected} open={!!selected} onClose={() => setSelected(null)} />
     </div>
   );
