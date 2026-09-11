@@ -1255,6 +1255,21 @@ async function maybeAiReply(
           .not("status", "in", "(resolvido,cancelado)").order("created_at", { ascending: false }).limit(3)
       : Promise.resolve({ data: null }),
   ]);
+  const { data: activeCouponsRaw } = await supabase
+    .from("crm_coupons")
+    .select("code, kind, discount_type, value, expires_at")
+    .eq("contact_id", contact.id)
+    .eq("status", "ativo")
+    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+    .limit(5);
+  const activeCoupons = (activeCouponsRaw ?? []) as Array<{ code: string; kind: string; discount_type: string; value: number; expires_at: string | null }>;
+  const couponsBrief = activeCoupons.length > 0
+    ? "\n\nCréditos deste lead (pode lembrar quando fizer sentido): " +
+      activeCoupons.map((c) =>
+        `${c.kind === "giftback" ? "giftback" : "cupom"} ${c.code} de ${c.discount_type === "percent" ? `${c.value}%` : `R$ ${Number(c.value).toFixed(2).replace(".", ",")}`}` +
+        (c.expires_at ? ` válido até ${new Date(c.expires_at).toLocaleDateString("pt-BR")}` : "")
+      ).join("; ")
+    : "";
   const openOrders = (openOrdersRaw ?? []) as Array<{ number: number; status: string; items: Array<{ name: string; qty: number }> }>;
   const openTickets = (openTicketsRaw ?? []) as Array<{ number: number; status: string; title: string }>;
   const opsBrief =
@@ -1299,7 +1314,8 @@ async function maybeAiReply(
         contactBrief(fieldDefs, fieldValues) +
         recordsBrief(recordTypes, contactRecords) +
         tagsBrief(tagDefs, contactTags) +
-        opsBrief,
+        opsBrief +
+        couponsBrief,
     },
     ...((history ?? []) as Array<{ sender: string; content: string }>)
       .slice()

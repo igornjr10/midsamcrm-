@@ -3,6 +3,7 @@ import { NavLink, Outlet, Navigate, useLocation } from "react-router-dom";
 import {
   Kanban, Users, MessageSquare, CalendarDays, Settings, LogOut, Loader2, Bot, Library,
   Building2, Megaphone, Moon, Sun, Eye, Menu, X, ShoppingBag, LifeBuoy,
+  LayoutDashboard, Receipt, ClipboardCheck, Filter, Gift, MousePointerClick,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -18,9 +19,12 @@ const NAV_GROUPS = [
   {
     label: "Vendas",
     items: [
+      { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
       { to: "/", label: "Pipeline", icon: Kanban },
       { to: "/contatos", label: "Contatos", icon: Users },
+      { to: "/vendas", label: "Vendas", icon: Receipt },
       { to: "/agenda", label: "Agenda", icon: CalendarDays },
+      { to: "/vendedor", label: "Painel do Vendedor", icon: ClipboardCheck },
     ],
   },
   {
@@ -30,6 +34,9 @@ const NAV_GROUPS = [
       { to: "/pedidos", label: "Pedidos", icon: ShoppingBag },
       { to: "/chamados", label: "Chamados", icon: LifeBuoy },
       { to: "/disparos", label: "Disparos", icon: Megaphone },
+      { to: "/segmentos", label: "Segmentos", icon: Filter },
+      { to: "/bonus", label: "Bônus", icon: Gift },
+      { to: "/captacao", label: "Captação", icon: MousePointerClick },
       { to: "/sdr", label: "SDR IA", icon: Bot },
       { to: "/biblioteca", label: "Biblioteca", icon: Library },
     ],

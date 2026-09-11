@@ -1,13 +1,17 @@
 import { useMemo, useState } from "react";
-import { BadgeCheck, Layers, Plus, Search, SlidersHorizontal, Tag, Users } from "lucide-react";
+import { BadgeCheck, Download, Layers, Plus, Search, SlidersHorizontal, Tag, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import {
   useContactsQuery, useCreateContactMutation, usePipelineStagesQuery, useContactTagsQuery,
   useRecordTypesQuery,
+  useSalesQuery,
+  useFeatures,
 } from "@/hooks/queries";
+import { RFM_SEGMENTS, computeMetrics, downloadText, metricsFor, money, toCsv } from "@/lib/retail";
+import { formatPhone } from "@/lib/types";
 import {
-  CONTACT_FILTERS, getStageLabel, getStageTone, matchesContactFilter,
+  CONTACT_FILTERS, getStageLabel, getStageTone, getToneClasses, matchesContactFilter,
   type Contact, type ContactFilter,
 } from "@/lib/types";
 import ContactDetailModal from "@/components/contacts/ContactDetailModal";
@@ -55,6 +59,19 @@ export default function Contacts() {
   // "contatos" ou a chave de um tipo de registro (apólices, pacotes...).
   const [view, setView] = useState("contatos");
   const { data: recordTypes = [] } = useRecordTypesQuery(company?.id);
+  // Métricas de compra só quando o módulo de vendas está no pacote.
+  const { has } = useFeatures(company?.id);
+  const showSales = has("vendas");
+  const { data: sales = [] } = useSalesQuery(company?.id, showSales);
+  const metrics = useMemo(() => computeMetrics(sales), [sales]);
+  const exportCsv = () => {
+    const rows: Array<Array<string | number | null>> = [["Nome", "Telefone", "E-mail", "Etapa", "Etiquetas", "Aniversário", "Compras", "Total gasto", "Última compra", "Perfil RFM"]];
+    for (const c of filtered) {
+      const m = metricsFor(metrics, c.id);
+      rows.push([c.name, formatPhone(c.phone), c.email, getStageLabel(stages, c.stage), (c.tags ?? []).join(", "), c.birth_date, m.purchases, m.spent.toFixed(2).replace(".", ","), m.lastPurchaseAt ? new Date(m.lastPurchaseAt).toLocaleDateString("pt-BR") : "", RFM_SEGMENTS.find((r) => r.id === m.segment)?.label ?? ""]);
+    }
+    downloadText("contatos.csv", toCsv(rows));
+  };
   const recordView = recordTypes.find((t) => t.key === view) ?? null;
   const [tagFilter, setTagFilter] = useState("all");
   const { data: tagCatalog = [] } = useContactTagsQuery(company?.id);
@@ -110,6 +127,10 @@ export default function Contacts() {
         }
         actions={
           <>
+            <Button variant="outline" onClick={exportCsv} title="Exportar planilha">
+              <Download />
+              Exportar
+            </Button>
             <Button variant="outline" onClick={() => setRecordTypesOpen(true)}>
               <Layers />
               Registros
@@ -244,6 +265,14 @@ export default function Contacts() {
                 <th className="px-4 py-3 font-semibold">Etapa</th>
                 <th className="px-4 py-3 font-semibold">Entrou em</th>
                 <th className="px-4 py-3 font-semibold">Última interação</th>
+                {showSales && (
+                  <>
+                    <th className="px-4 py-3 font-semibold">Compras</th>
+                    <th className="px-4 py-3 font-semibold">Total gasto</th>
+                    <th className="px-4 py-3 font-semibold">Última compra</th>
+                    <th className="px-4 py-3 font-semibold">Perfil</th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -311,6 +340,22 @@ export default function Contacts() {
                     <td className="tabular px-4 py-3 text-muted-foreground">
                       {contact.last_interaction_at ? relativeDay(contact.last_interaction_at) : "—"}
                     </td>
+                    {showSales && (() => {
+                      const m = metricsFor(metrics, contact.id);
+                      const seg = RFM_SEGMENTS.find((r) => r.id === m.segment);
+                      return (
+                        <>
+                          <td className="tabular px-4 py-3">{m.purchases || "—"}</td>
+                          <td className="tabular px-4 py-3">{m.purchases ? money(m.spent) : "—"}</td>
+                          <td className="tabular px-4 py-3 text-muted-foreground">{m.lastPurchaseAt ? relativeDay(m.lastPurchaseAt) : "—"}</td>
+                          <td className="px-4 py-3">
+                            {m.purchases ? (
+                              <Badge variant="outline" className={cn(getToneClasses(seg?.tone ?? "").badge)}>{seg?.label}</Badge>
+                            ) : "—"}
+                          </td>
+                        </>
+                      );
+                    })()}
                   </tr>
                 ))
               )}

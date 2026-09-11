@@ -440,3 +440,8 @@ verify_jwt = false
 # Chamada pelo cron (pg_net), sem JWT; valida service role ou x-cron-secret.
 [functions.relationship-rules]
 verify_jwt = false
+
+# Pop-up de captação: roda no site do cliente, sem login. O token do formulário
+# identifica a empresa; o que se grava é só o que o formulário pediu.
+[functions.lead-capture]
+verify_jwt = false

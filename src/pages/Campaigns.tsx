@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, Megaphone, Play, Plus, Send, X } from "lucide-react";
 import { toast } from "sonner";
@@ -118,6 +119,12 @@ export default function Campaigns() {
   const cancelCampaign = useCancelCampaignMutation();
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  // Segmentos → Disparar chega aqui com ?segmento=<id>: abre já filtrado.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const segmentFromUrl = searchParams.get("segmento");
+  useEffect(() => {
+    if (segmentFromUrl) setDialogOpen(true);
+  }, [segmentFromUrl]);
   const [detail, setDetail] = useState<Campaign | null>(null);
   const [dispatchingId, setDispatchingId] = useState<string | null>(null);
 
@@ -306,8 +313,9 @@ export default function Campaigns() {
       )}
 
       <NewCampaignDialog
+        initialSegmentId={segmentFromUrl}
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
+        onOpenChange={(v) => { setDialogOpen(v); if (!v && segmentFromUrl) setSearchParams({}); }}
         onSubmit={(input) => void handleCreate(input)}
         submitting={createCampaign.isPending}
       />

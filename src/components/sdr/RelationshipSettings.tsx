@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Cake, CalendarCheck, HeartHandshake, Star } from "lucide-react";
+import { Cake, CalendarCheck, Gift, HeartHandshake, Star } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -75,6 +75,15 @@ const RULES: Array<{
     padrao:
       "Oi {{primeiro_nome}}! Lembrando do seu horário amanhã, {{data}} às {{hora}}{{recurso}}. Responda 1 para confirmar ou 2 se precisar remarcar.",
   },
+  {
+    kind: "giftback",
+    titulo: "Giftback vencendo",
+    descricao:
+      "Aviso para quem tem giftback ativo perto de vencer (a antecedência está em Bônus). Aceita {{codigo}}, {{valor}} e {{validade}}.",
+    icone: Gift,
+    padrao:
+      "Oi {{primeiro_nome}}! Seu giftback de {{valor}} vence em {{validade}}. Passa aqui para usar: {{codigo}} 😉",
+  },
 ];
 
 const KIND_LABEL: Record<string, string> = {
@@ -82,6 +91,7 @@ const KIND_LABEL: Record<string, string> = {
   reativacao: "Reativação",
   nps: "NPS",
   agenda: "Lembrete",
+  giftback: "Giftback",
 };
 
 export default function RelationshipSettings() {
@@ -212,7 +222,7 @@ export default function RelationshipSettings() {
                     <p className="text-xs text-muted-foreground">{rule.campo.hint}</p>
                   </div>
                 )}
-                {rule.kind !== "aniversario" && rule.kind !== "agenda" && (
+                {rule.kind !== "aniversario" && rule.kind !== "agenda" && rule.kind !== "giftback" && (
                 <div className="space-y-1.5">
                   <Label>Não repetir por (dias)</Label>
                   <Input

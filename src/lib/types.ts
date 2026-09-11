@@ -354,6 +354,126 @@ export function orderTotal(items: OrderItem[]): number | null {
   return any ? Math.round(total * 100) / 100 : null;
 }
 
+// ── Varejo: vendas, giftback, segmentos, tarefas, captação ──────────────────
+
+export type SaleItem = OrderItem;
+
+export interface Sale {
+  id: string;
+  company_id: string;
+  contact_id: string | null;
+  number: number;
+  total: number;
+  discount: number;
+  shipping: number;
+  items: SaleItem[];
+  seller_id: string | null;
+  store: string | null;
+  origin: "manual" | "planilha" | "pedido" | "captacao";
+  order_id: string | null;
+  coupon_id: string | null;
+  coupon_code: string | null;
+  status: "pago" | "cancelado";
+  sold_at: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Coupon {
+  id: string;
+  company_id: string;
+  contact_id: string | null;
+  code: string;
+  kind: "giftback" | "cupom";
+  discount_type: "fixed" | "percent";
+  value: number;
+  min_purchase: number | null;
+  expires_at: string | null;
+  status: "ativo" | "usado" | "expirado" | "cancelado";
+  origin_sale_id: string | null;
+  used_sale_id: string | null;
+  used_at: string | null;
+  sent_at: string | null;
+  reminder_sent_at: string | null;
+  created_at: string;
+}
+
+export interface GiftbackSettings {
+  company_id: string;
+  enabled: boolean;
+  percent: number;
+  validity_days: number;
+  min_purchase: number;
+  prefix: string;
+  send_message: boolean;
+  message: string;
+  reminder_days: number;
+  reminder_message: string;
+  post_sale_task_days: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SegmentRules {
+  rfm?: string[];
+  last_purchase_days?: { min?: number | null; max?: number | null };
+  purchases?: { min?: number | null; max?: number | null };
+  spent?: { min?: number | null; max?: number | null };
+  tags?: string[];
+  stage?: string[];
+  gender?: string[];
+  birthday_month?: boolean;
+  has_giftback?: boolean;
+  no_purchase?: boolean;
+}
+
+export interface Segment {
+  id: string;
+  company_id: string;
+  name: string;
+  description: string | null;
+  rules: SegmentRules;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SellerTask {
+  id: string;
+  company_id: string;
+  contact_id: string | null;
+  assigned_to: string | null;
+  title: string;
+  kind: "pos_venda" | "nps" | "aniversario" | "recompra" | "giftback" | "outro";
+  due_at: string;
+  status: "pendente" | "feita" | "ignorada";
+  sale_id: string | null;
+  notes: string | null;
+  created_by: "user" | "auto";
+  done_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LeadForm {
+  id: string;
+  company_id: string;
+  token: string;
+  title: string;
+  subtitle: string;
+  button_label: string;
+  fields: string[];
+  tag: string | null;
+  coupon_percent: number | null;
+  coupon_validity_days: number;
+  success_message: string;
+  theme_color: string;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 // ── Chamados ────────────────────────────────────────────────────────────────
 
 export type TicketStatus = "aberto" | "em_andamento" | "aguardando" | "resolvido" | "cancelado";
@@ -506,7 +626,7 @@ export interface CompanyUsage {
 }
 
 /** As três fixas mais "data", que dispara a partir de um campo de data do contato. */
-export type RelationshipKind = "aniversario" | "reativacao" | "nps" | "data" | "agenda";
+export type RelationshipKind = "aniversario" | "reativacao" | "nps" | "data" | "agenda" | "giftback";
 
 /**
  * Régua de relacionamento: falar com quem já é cliente sem ninguém lembrar.
