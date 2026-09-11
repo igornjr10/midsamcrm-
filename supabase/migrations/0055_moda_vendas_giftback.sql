@@ -13,6 +13,31 @@
 --
 -- Seis módulos novos, no pacote de Moda e Geral. Prefixo crm_ como na 0052.
 
+-- ── Re-execução segura ──────────────────────────────────────────────────────
+-- A primeira tentativa desta migration parou no meio e deixou tabelas criadas.
+-- Aqui elas são removidas APENAS se estiverem vazias, para a criação abaixo
+-- valer o esquema deste arquivo. Tabela com dados é preservada e a criação
+-- falha de propósito: melhor um erro visível do que apagar venda de cliente.
+do $$
+declare
+  t text;
+  n bigint;
+begin
+  foreach t in array array[
+    'crm_lead_forms', 'crm_segments', 'crm_tasks', 'crm_coupons', 'crm_sales', 'crm_giftback_settings'
+  ] loop
+    if to_regclass('public.' || t) is not null then
+      execute format('select count(*) from public.%I', t) into n;
+      if n = 0 then
+        execute format('drop table public.%I cascade', t);
+      else
+        raise notice 'public.% tem % linhas: mantida', t, n;
+      end if;
+    end if;
+  end loop;
+end;
+$$;
+
 -- ── Módulos ─────────────────────────────────────────────────────────────────
 insert into public.features (key, label, description, route, core, position) values
   ('dashboard', 'Dashboard',          'Receita, RFM, NPS, recompra e produtos',          '/dashboard', false, 5),
@@ -133,6 +158,8 @@ create policy "company crm coupons" on public.crm_coupons for all
   using (company_id in (select public.my_company_ids()) or public.is_super_admin())
   with check (company_id in (select public.my_company_ids()) or public.is_super_admin());
 
+alter table public.crm_sales
+  drop constraint if exists crm_sales_coupon_fk;
 alter table public.crm_sales
   add constraint crm_sales_coupon_fk foreign key (coupon_id) references public.crm_coupons(id) on delete set null;
 
@@ -263,6 +290,7 @@ begin
 end;
 $$;
 
+drop trigger if exists crm_sale_from_order on public.crm_orders;
 create trigger crm_sale_from_order after update of status on public.crm_orders
   for each row execute function public.crm_sale_from_order();
 
