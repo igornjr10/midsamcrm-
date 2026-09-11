@@ -111,7 +111,7 @@ export default function Settings() {
     setProvider(config.provider ?? "meta");
     setPhoneNumberId(config.phone_number_id ?? "");
     setWabaId(config.waba_id ?? "");
-    setAccessToken(config.access_token ?? "");
+    setAccessToken("");
     setVerifyToken(config.webhook_verify_token);
     setLabel(config.label ?? "");
   }, [config]);
@@ -365,7 +365,7 @@ export default function Settings() {
 
   const handleSave = async () => {
     if (!user || !company) return;
-    if (!phoneNumberId.trim() || !wabaId.trim() || !accessToken.trim()) {
+    if (!phoneNumberId.trim() || !wabaId.trim() || (!accessToken.trim() && !config?.has_access_token)) {
       toast.error("Preencha Phone Number ID, WABA ID e Access Token.");
       return;
     }
@@ -376,7 +376,8 @@ export default function Settings() {
         provider: "meta",
         phone_number_id: phoneNumberId.trim(),
         waba_id: wabaId.trim(),
-        access_token: accessToken.trim(),
+        // Vazio mantém o token já gravado: ele não é lido de volta pelo navegador.
+        access_token: accessToken.trim() || null,
         webhook_verify_token: verifyToken,
         label: label.trim() || null,
         api_base_url: DATAFY_API_BASE,
@@ -626,9 +627,10 @@ export default function Settings() {
                 <Label>Access Token</Label>
                 <Input
                   type="password"
+                  autoComplete="new-password"
                   value={accessToken}
                   onChange={(e) => setAccessToken(e.target.value)}
-                  placeholder="sk_live_..."
+                  placeholder={config?.has_access_token ? "•••••••• (token salvo; deixe em branco para manter)" : "sk_live_..."}
                 />
               </div>
               <div className="space-y-1.5">

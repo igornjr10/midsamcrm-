@@ -424,11 +424,11 @@ export interface WhatsappConfig {
   /** Nulos quando o provider não é "meta". */
   phone_number_id: string | null;
   waba_id: string | null;
-  access_token: string | null;
+  /** O token em si nunca chega ao navegador (0054); só se existe. */
+  has_access_token: boolean;
   /** Instância nos provedores não-oficiais (Evolution, UAZAPI). */
   instance_name: string | null;
   instance_id: string | null;
-  instance_token: string | null;
   webhook_verify_token: string;
   app_id: string | null;
   active: boolean;
@@ -445,7 +445,8 @@ export interface AiConfig {
   enabled: boolean;
   system_prompt: string | null;
   model: string;
-  openai_api_key: string | null;
+  /** A chave em si nunca chega ao navegador (0054); só se existe. */
+  has_openai_api_key: boolean;
   /** Pausa a IA no contato assim que um atendente humano responde a conversa. */
   pause_ai_on_human_reply: boolean;
   /** A IA não responde nem faz follow-up de contato em etapa de Ganho ou Perdido. */

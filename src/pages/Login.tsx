@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -57,11 +57,9 @@ export default function Login() {
           {loading ? "Entrando..." : "Entrar"}
         </Button>
       </form>
-      <p className="mt-5 text-center text-sm text-muted-foreground">
-        Não tem conta?{" "}
-        <Link to="/signup" className="font-medium text-primary hover:underline">
-          Cadastre-se
-        </Link>
+      {/* Sem cadastro público: as contas são criadas pela Midsam na tela de Empresas. */}
+      <p className="mt-5 text-center text-xs text-muted-foreground">
+        Ainda não tem acesso? Fale com a Midsam para criar a conta da sua empresa.
       </p>
     </AuthShell>
   );

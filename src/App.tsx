@@ -7,7 +7,6 @@ import { Toaster } from "@/components/ui/sonner";
 import AppLayout from "@/components/layout/AppLayout";
 import ErrorBoundary from "@/components/layout/ErrorBoundary";
 import Login from "@/pages/Login";
-import Signup from "@/pages/Signup";
 import Pipeline from "@/pages/Pipeline";
 import Contacts from "@/pages/Contacts";
 import Chat from "@/pages/Chat";
@@ -56,7 +55,6 @@ export default function App() {
             <ErrorBoundary>
               <Routes>
                 <Route path="/login" element={<Login />} />
-                <Route path="/signup" element={<Signup />} />
                 <Route element={<AppLayout />}>
                   <Route path="/" element={<Pipeline />} />
                   <Route path="/contatos" element={<Contacts />} />
