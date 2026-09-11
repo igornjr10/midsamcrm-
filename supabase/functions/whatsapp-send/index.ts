@@ -1,7 +1,9 @@
 // Envio de mensagens WhatsApp (Meta/Datafy Cloud API) para a conta logada.
 //
 // Ações (?action=):
-//   send-text      -> { phone, text, contact_id }
+//   send-text      -> { phone, text, contact_id, purpose?, context? }
+//                     Com `purpose`, e uma automacao: fora da janela de 24h
+//                     da Meta cai para o template mapeado (_shared/outbound.ts).
 //   send-media     -> { phone, mediaUrl, mediaType, mimetype?, caption?, contact_id }
 //   send-template  -> { phone, template_name, template_language, variable_map?, template_body?, contact_id }
 //   list-templates -> templates da WABA (só os aprovados pela Meta)
@@ -22,6 +24,8 @@ import {
   renderTemplateText,
   type VariableMap,
 } from "../_shared/whatsapp-template.ts";
+import { sendAutomation } from "../_shared/outbound.ts";
+import { type OutboundConfig } from "../_shared/whatsapp-out.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -110,6 +114,39 @@ Deno.serve(async (req: Request) => {
         contactId: (body.contact_id as string | undefined) ?? null,
       });
       if (!usage.allowed) return json({ success: false, error: limitReachedMessage(usage) }, 200);
+    }
+
+    // Automacao (giftback, aviso de pedido, vaga...): o purpose decide o
+    // caminho. Dentro da janela vai como texto; fora dela, como template.
+    // Vale para todos os provedores — o helper trata cada um.
+    const purpose = (body.purpose as string | undefined)?.trim();
+    if (action === "send-text" && purpose) {
+      const phoneRaw = body.phone as string | undefined;
+      const textRaw = (body.text as string | undefined)?.trim();
+      const forContact = (body.contact_id as string | undefined) ?? null;
+      if (!phoneRaw) return json({ error: "phone é obrigatório" }, 400);
+      if (!textRaw) return json({ error: "text é obrigatório" }, 400);
+
+      const { data: contactRow } = forContact
+        ? await supabaseAdmin.from("contacts").select("name, email").eq("id", forContact).maybeSingle()
+        : { data: null };
+      const c = contactRow as { name?: string | null; email?: string | null } | null;
+
+      const result = await sendAutomation(supabaseAdmin, config as unknown as OutboundConfig, {
+        phone: normalizePhone(phoneRaw),
+        text: textRaw,
+        purpose,
+        contactId: forContact,
+        contactName: c?.name ?? null,
+        contactEmail: c?.email ?? null,
+        context: (body.context as Record<string, string> | undefined) ?? {},
+      });
+      if (result.error) return json({ success: false, error: result.error }, 200);
+      await recordSent(forContact ?? undefined, result.messageId, result.text, {
+        automation: purpose,
+        ...(result.usedTemplate ? { isTemplate: true } : {}),
+      });
+      return json({ success: true, message_id: result.messageId, used_template: result.usedTemplate });
     }
 
     if (config.provider === "openwa") {

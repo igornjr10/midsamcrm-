@@ -11,7 +11,8 @@
 // mesmo telefone não ganha dois.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { normalizePhone } from "../_shared/phone.ts";
-import { OUTBOUND_COLUMNS, sendText, type OutboundConfig } from "../_shared/whatsapp-out.ts";
+import { OUTBOUND_COLUMNS, type OutboundConfig } from "../_shared/whatsapp-out.ts";
+import { sendAutomation } from "../_shared/outbound.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -215,7 +216,20 @@ Deno.serve(async (req: Request) => {
       if (cfg) {
         const first = name.split(/\s+/)[0] ?? "";
         const text = `${first ? `Oi ${first}! ` : "Oi! "}Seu cupom de ${form.coupon_percent}% de desconto é ${couponCode}, válido por ${form.coupon_validity_days} dias. É só apresentar na compra. 💜`;
-        const { messageId, error } = await sendText(cfg as OutboundConfig, phone, text);
+        // O lead acabou de preencher o formulário, mas nunca escreveu no
+        // WhatsApp: a janela está fechada e isto sai como template.
+        const { messageId, error } = await sendAutomation(supabase, cfg as OutboundConfig, {
+          phone,
+          text,
+          purpose: "boas_vindas",
+          contactId,
+          contactName: name || null,
+          context: {
+            codigo: couponCode,
+            valor: `${form.coupon_percent}%`,
+            validade: new Date(Date.now() + form.coupon_validity_days * 86_400_000).toLocaleDateString("pt-BR"),
+          },
+        });
         if (!error) {
           await supabase.from("conversations").insert({
             user_id: null, company_id: form.company_id, contact_id: contactId, sender: "ai", content: text,

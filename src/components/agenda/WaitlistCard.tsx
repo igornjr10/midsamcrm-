@@ -76,7 +76,19 @@ export default function WaitlistCard({
     const nome = firstNameForMessage(contact.name);
     const text = `${nome ? `Oi ${nome}! ` : "Oi! "}Abriu um horário ${slotText(offerSlot)}${offerSlot.resource_id ? ` com ${resourceName(offerSlot.resource_id)}` : ""}. Quer ficar com ele? Responda por aqui que eu confirmo.`;
     try {
-      await sendWhatsappText({ company_id: company.id, contact_id: contact.id, phone: contact.phone, text });
+      const quando = new Date(offerSlot.starts_at);
+      await sendWhatsappText({
+        company_id: company.id,
+        contact_id: contact.id,
+        phone: contact.phone,
+        text,
+        purpose: "vaga",
+        context: {
+          data: quando.toLocaleDateString("pt-BR"),
+          hora: offerSlot.all_day ? "" : quando.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+          recurso: offerSlot.resource_id ? resourceName(offerSlot.resource_id) ?? "" : "",
+        },
+      });
       toast.success(`Vaga oferecida para ${contactLabel(contact)}.`);
       void setStatus.mutateAsync({ id: entryId, company_id: company.id, status: "atendido" });
     } catch (err) {

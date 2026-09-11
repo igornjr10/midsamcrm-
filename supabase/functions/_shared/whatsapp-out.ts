@@ -95,6 +95,40 @@ export async function sendText(
   }
 }
 
+/**
+ * Manda um payload de template já montado (buildTemplatePayload).
+ *
+ * Só a Meta tem template: é o único caminho para falar com quem está fora da
+ * janela de 24h. Os outros provedores não chegam aqui.
+ */
+export async function sendTemplate(
+  config: OutboundConfig,
+  payload: Record<string, unknown>,
+): Promise<{ messageId: string | null; error: string | null }> {
+  try {
+    const res = await fetch(`${metaBase(config.api_base_url)}/${config.phone_number_id}/messages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.access_token}`,
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) {
+      const raw = await res.text().catch(() => "");
+      return { messageId: null, error: `Meta respondeu ${res.status}: ${raw.slice(0, 200)}` };
+    }
+    const data = await res.json().catch(() => ({})) as { messages?: Array<{ id?: string }> };
+    return { messageId: data.messages?.[0]?.id ?? null, error: null };
+  } catch (err) {
+    return {
+      messageId: null,
+      error: err instanceof Error ? err.message : "falha de rede ao falar com a Meta",
+    };
+  }
+}
+
 /** Mesma convenção do follow-up e das campanhas. */
 export function renderPlaceholders(template: string, contactName: string | null): string {
   const name = (contactName ?? "").trim();

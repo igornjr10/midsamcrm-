@@ -126,7 +126,18 @@ export default function Bonus() {
     const contact = c.contact_id ? byId.get(c.contact_id) : undefined;
     if (!company || !contact?.phone) return void toast.error("Cupom sem cliente com telefone.");
     try {
-      await sendWhatsappText({ company_id: company.id, contact_id: contact.id, phone: contact.phone, text: renderGiftback(cfg.message, c, contact) });
+      await sendWhatsappText({
+        company_id: company.id,
+        contact_id: contact.id,
+        phone: contact.phone,
+        text: renderGiftback(cfg.message, c, contact),
+        purpose: c.kind === "giftback" ? "giftback" : "boas_vindas",
+        context: {
+          codigo: c.code,
+          valor: c.discount_type === "percent" ? `${c.value}%` : money(c.value),
+          validade: c.expires_at ? new Date(c.expires_at).toLocaleDateString("pt-BR") : "",
+        },
+      });
       await updateCoupon.mutateAsync({ id: c.id, company_id: company.id, sent_at: new Date().toISOString() });
       toast.success(`Enviado para ${contactLabel(contact)}.`);
     } catch (err) {

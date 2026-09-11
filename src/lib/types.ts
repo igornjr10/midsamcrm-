@@ -730,7 +730,9 @@ export type VariableSource =
   | { source: "contact_first_name" }
   | { source: "contact_phone" }
   | { source: "contact_email" }
-  | { source: "text"; value: string };
+  | { source: "text"; value: string }
+  /** Dado do evento que disparou a automação: código do giftback, nº do pedido, hora. */
+  | { source: "context"; key: string };
 
 export interface VariableMap {
   header?: VariableSource[];
@@ -738,6 +740,143 @@ export interface VariableMap {
   header_media_url?: string | null;
   header_media_type?: "image" | "video" | "document" | null;
 }
+
+/**
+ * Template aprovado que uma automação usa fora da janela de 24h da Meta.
+ * Sem ele, a mensagem automática simplesmente não chega a quem está em silêncio.
+ */
+export interface AutomationTemplate {
+  company_id: string;
+  purpose: string;
+  template_name: string;
+  template_language: string;
+  variable_map: VariableMap;
+  body_preview: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * As automações que mandam mensagem sozinhas, e que dado cada uma oferece para
+ * as variáveis do template. `feature` esconde a linha de quem não tem o módulo.
+ */
+export const AUTOMATION_PURPOSES: Array<{
+  id: string;
+  label: string;
+  hint: string;
+  feature?: string;
+  context: Array<{ key: string; label: string }>;
+}> = [
+  {
+    id: "giftback",
+    label: "Giftback da venda",
+    hint: "Sai logo depois da venda, com o código do crédito",
+    feature: "bonus",
+    context: [
+      { key: "codigo", label: "Código do giftback" },
+      { key: "valor", label: "Valor do giftback" },
+      { key: "validade", label: "Validade" },
+    ],
+  },
+  {
+    id: "giftback_vencendo",
+    label: "Giftback vencendo",
+    hint: "Aviso antes do crédito expirar",
+    feature: "bonus",
+    context: [
+      { key: "codigo", label: "Código do giftback" },
+      { key: "valor", label: "Valor do giftback" },
+      { key: "validade", label: "Validade" },
+    ],
+  },
+  {
+    id: "boas_vindas",
+    label: "Cupom de boas-vindas",
+    hint: "Lead que chegou pelo pop-up de captação e nunca escreveu",
+    feature: "captacao",
+    context: [
+      { key: "codigo", label: "Código do cupom" },
+      { key: "valor", label: "Desconto" },
+      { key: "validade", label: "Validade" },
+    ],
+  },
+  {
+    id: "aniversario",
+    label: "Aniversário",
+    hint: "Régua de aniversário",
+    feature: "sdr",
+    context: [],
+  },
+  {
+    id: "reativacao",
+    label: "Reativação",
+    hint: "Régua de quem sumiu",
+    feature: "sdr",
+    context: [],
+  },
+  {
+    id: "nps",
+    label: "Pesquisa de satisfação",
+    hint: "Régua de NPS depois do negócio fechado",
+    feature: "sdr",
+    context: [],
+  },
+  {
+    id: "data",
+    label: "Régua por data",
+    hint: "Renovação, retorno, cobrança, pós-evento",
+    feature: "sdr",
+    context: [
+      { key: "data", label: "Data do campo" },
+      { key: "dias", label: "Dias de antecedência" },
+      { key: "titulo", label: "Título do registro" },
+    ],
+  },
+  {
+    id: "agenda",
+    label: "Lembrete de compromisso",
+    hint: "Véspera do horário marcado",
+    feature: "agenda",
+    context: [
+      { key: "data", label: "Data" },
+      { key: "hora", label: "Hora" },
+      { key: "titulo", label: "Título" },
+      { key: "recurso", label: "Profissional ou sala" },
+    ],
+  },
+  {
+    id: "vaga",
+    label: "Vaga na agenda",
+    hint: "Oferta de horário que foi cancelado",
+    feature: "agenda",
+    context: [
+      { key: "data", label: "Data" },
+      { key: "hora", label: "Hora" },
+      { key: "recurso", label: "Profissional ou sala" },
+    ],
+  },
+  {
+    id: "pedido_status",
+    label: "Status do pedido",
+    hint: "Recebido, em preparo, saiu, entregue",
+    feature: "pedidos",
+    context: [
+      { key: "numero", label: "Número do pedido" },
+      { key: "status", label: "Status" },
+    ],
+  },
+  {
+    id: "chamado_status",
+    label: "Status do chamado",
+    hint: "Aberto, em andamento, resolvido",
+    feature: "chamados",
+    context: [
+      { key: "numero", label: "Protocolo" },
+      { key: "titulo", label: "Título do chamado" },
+      { key: "status", label: "Status" },
+    ],
+  },
+];
 
 export type CampaignStatus = "draft" | "running" | "paused" | "done" | "canceled";
 

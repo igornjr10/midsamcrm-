@@ -120,7 +120,18 @@ export default function Chamados() {
       return;
     }
     try {
-      await sendWhatsappText({ company_id: company.id, contact_id: contact.id, phone: contact.phone, text: statusMessage(t, contact, status) });
+      await sendWhatsappText({
+        company_id: company.id,
+        contact_id: contact.id,
+        phone: contact.phone,
+        text: statusMessage(t, contact, status),
+        purpose: "chamado_status",
+        context: {
+          numero: String(t.number),
+          titulo: t.title,
+          status: TICKET_STATUSES.find((s) => s.id === status)?.label ?? status,
+        },
+      });
       toast.success(`Cliente avisado: chamado #${t.number}.`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erro ao avisar");

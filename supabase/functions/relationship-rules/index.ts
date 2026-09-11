@@ -22,7 +22,8 @@ import { normalizePhone } from "../_shared/phone.ts";
 import { localClock } from "../_shared/date.ts";
 import { consumeCoins } from "../_shared/usage.ts";
 import { hasFeature } from "../_shared/features.ts";
-import { OUTBOUND_COLUMNS, renderPlaceholders, sendText, type OutboundConfig } from "../_shared/whatsapp-out.ts";
+import { OUTBOUND_COLUMNS, renderPlaceholders, type OutboundConfig } from "../_shared/whatsapp-out.ts";
+import { sendAutomation } from "../_shared/outbound.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -119,7 +120,18 @@ async function runRule(
     }
 
     const text = renderPlaceholders(renderDatePlaceholders(rule.message, rule, target), target.name);
-    const { messageId, error } = await sendText(config, normalizePhone(target.phone), text);
+    const { messageId, error } = await sendAutomation(supabase, config, {
+      phone: normalizePhone(target.phone),
+      text,
+      purpose: rule.kind,
+      contactId: target.contact_id,
+      contactName: target.name,
+      context: {
+        data: formatDate(target.field_value),
+        dias: String(Math.abs(rule.offset_days)),
+        titulo: target.record_title ?? "",
+      },
+    });
 
     await supabase.from("relationship_logs").insert({
       company_id: rule.company_id,
@@ -225,7 +237,14 @@ async function runAgendaRule(
         .replace(/\s{2,}/g, " "),
       t.name,
     );
-    const { messageId, error } = await sendText(config, normalizePhone(t.phone), text);
+    const { messageId, error } = await sendAutomation(supabase, config, {
+      phone: normalizePhone(t.phone),
+      text,
+      purpose: "agenda",
+      contactId: t.contact_id,
+      contactName: t.name,
+      context: { data, hora: t.all_day ? "" : hora, titulo: t.title, recurso: t.resource_name ?? "" },
+    });
 
     await supabase.from("relationship_logs").insert({
       company_id: rule.company_id,
@@ -316,7 +335,14 @@ async function runGiftbackRule(
         .replace(/\{\{\s*validade\s*\}\}/gi, validade),
       t.contacts?.name ?? null,
     );
-    const { messageId, error } = await sendText(config, normalizePhone(phone), text);
+    const { messageId, error } = await sendAutomation(supabase, config, {
+      phone: normalizePhone(phone),
+      text,
+      purpose: "giftback_vencendo",
+      contactId: t.contact_id,
+      contactName: t.contacts?.name ?? null,
+      context: { codigo: t.code, valor: brl(Number(t.value)), validade },
+    });
     await supabase.from("relationship_logs").insert({
       company_id: rule.company_id, rule_id: rule.id, contact_id: t.contact_id, kind: "giftback",
       status: error ? "failed" : "sent", content: text, message_ref: messageId, error,

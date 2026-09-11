@@ -9,7 +9,9 @@ export type VariableSource =
   | { source: "contact_first_name" }
   | { source: "contact_phone" }
   | { source: "contact_email" }
-  | { source: "text"; value?: string };
+  | { source: "text"; value?: string }
+  /** Dado do evento que disparou a automação: código do giftback, nº do pedido, hora. */
+  | { source: "context"; key: string };
 
 export interface VariableMap {
   header?: VariableSource[];
@@ -28,7 +30,11 @@ export interface TemplateContact {
  * Resolve uma variável para o contato. A Meta rejeita parâmetro vazio, então
  * cai para "-" quando o campo do contato não está preenchido.
  */
-export function resolveVariable(variable: VariableSource, contact: TemplateContact): string {
+export function resolveVariable(
+  variable: VariableSource,
+  contact: TemplateContact,
+  context?: Record<string, string>,
+): string {
   let value = "";
   switch (variable.source) {
     case "contact_name":
@@ -46,6 +52,9 @@ export function resolveVariable(variable: VariableSource, contact: TemplateConta
     case "text":
       value = variable.value ?? "";
       break;
+    case "context":
+      value = context?.[variable.key] ?? "";
+      break;
   }
   // Quebra de linha e tab são rejeitadas pela API em parâmetros de template.
   return value.replace(/\s+/g, " ").trim() || "-";
@@ -54,8 +63,9 @@ export function resolveVariable(variable: VariableSource, contact: TemplateConta
 export function resolveVariables(
   variables: VariableSource[] | undefined,
   contact: TemplateContact,
+  context?: Record<string, string>,
 ): string[] {
-  return (variables ?? []).map((v) => resolveVariable(v, contact));
+  return (variables ?? []).map((v) => resolveVariable(v, contact, context));
 }
 
 /** Substitui {{1}}, {{2}}... pelos valores resolvidos (para prévia e histórico). */
@@ -72,6 +82,7 @@ export function buildTemplatePayload(
   languageCode: string,
   variableMap: VariableMap,
   contact: TemplateContact,
+  context?: Record<string, string>,
 ): { payload: Record<string, unknown>; bodyParams: string[] } {
   const components: Array<Record<string, unknown>> = [];
 
@@ -83,7 +94,7 @@ export function buildTemplatePayload(
       parameters: [{ type: mediaType, [mediaType]: { link: mediaUrl } }],
     });
   } else {
-    const headerParams = resolveVariables(variableMap.header, contact);
+    const headerParams = resolveVariables(variableMap.header, contact, context);
     if (headerParams.length > 0) {
       components.push({
         type: "header",
@@ -92,7 +103,7 @@ export function buildTemplatePayload(
     }
   }
 
-  const bodyParams = resolveVariables(variableMap.body, contact);
+  const bodyParams = resolveVariables(variableMap.body, contact, context);
   if (bodyParams.length > 0) {
     components.push({
       type: "body",
