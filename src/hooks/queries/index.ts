@@ -12,6 +12,7 @@ export * from "./useRecordsQuery";
 export * from "./useOrdersQuery";
 export * from "./useTicketsQuery";
 export * from "./useResourcesQuery";
+export * from "./useRetailQuery";
 export * from "./useLibraryQuery";
 export * from "./useAppointmentsQuery";
 export * from "./useGoogleCalendarQuery";

@@ -57,7 +57,7 @@ export default function SdrIa() {
     setEnabled(config.enabled);
     setPrompt(config.system_prompt ?? DEFAULT_PROMPT);
     setModel(config.model);
-    setApiKey(config.openai_api_key ?? "");
+    setApiKey("");
     setPauseOnHuman(config.pause_ai_on_human_reply ?? true);
     setOnlyOpenStages(config.ai_only_open_stages ?? true);
     setWindowEnabled(config.reply_window_enabled ?? false);
@@ -69,7 +69,7 @@ export default function SdrIa() {
 
   const handleSave = async () => {
     if (!company) return;
-    if (enabled && !apiKey.trim()) {
+    if (enabled && !apiKey.trim() && !config?.has_openai_api_key) {
       toast.error("Informe a chave da OpenAI para ligar o SDR IA.");
       return;
     }
@@ -83,6 +83,7 @@ export default function SdrIa() {
         enabled,
         system_prompt: prompt.trim() || null,
         model,
+        // Vazio mantém a chave gravada: ela não é lida de volta pelo navegador.
         openai_api_key: apiKey.trim() || null,
         pause_ai_on_human_reply: pauseOnHuman,
         ai_only_open_stages: onlyOpenStages,
@@ -233,7 +234,7 @@ export default function SdrIa() {
                       <Label>Chave da OpenAI</Label>
                       <Input
                         type="password"
-                        placeholder="sk-..."
+                        placeholder={config?.has_openai_api_key ? "•••••••• (chave salva; deixe em branco para manter)" : "sk-..."}
                         value={apiKey}
                         onChange={(e) => setApiKey(e.target.value)}
                       />

@@ -3,7 +3,10 @@ import { AlertCircle, Loader2, Search, Send, Sparkles } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import {
   useContactsQuery, useWhatsappTemplatesQuery, usePipelineStagesQuery,
-  useContactTagsQuery, useWhatsappConfigQuery,
+  useContactTagsQuery,
+  useSegmentsQuery,
+  useSalesQuery,
+  useCouponsQuery, useWhatsappConfigQuery,
 } from "@/hooks/queries";
 import type { CreateCampaignInput } from "@/hooks/queries";
 import {
@@ -12,6 +15,7 @@ import {
 } from "@/lib/types";
 import { FLOW_PRESETS, findFlowPreset } from "@/lib/flows";
 import { cn } from "@/lib/utils";
+import { computeMetrics, matchesSegment } from "@/lib/retail";
 import {
   bodyPlaceholders,
   defaultVariables,
@@ -44,16 +48,23 @@ export default function NewCampaignDialog({
   onOpenChange,
   onSubmit,
   submitting,
+  initialSegmentId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (input: CreateCampaignInput) => void;
+  /** Vindo de Segmentos → Disparar: já abre com o público filtrado. */
+  initialSegmentId?: string | null;
   submitting: boolean;
 }) {
   const { company } = useAuth();
   const { data: contacts = [] } = useContactsQuery(company?.id);
   const { data: stages = [] } = usePipelineStagesQuery(company?.id);
   const { data: tagCatalog = [] } = useContactTagsQuery(company?.id);
+  const { data: segments = [] } = useSegmentsQuery(company?.id);
+  const { data: sales = [] } = useSalesQuery(company?.id, true);
+  const { data: coupons = [] } = useCouponsQuery(company?.id, true);
+  const metrics = useMemo(() => computeMetrics(sales), [sales]);
   const { data: templates = [], isPending: templatesLoading, error: templatesError } =
     useWhatsappTemplatesQuery(company?.id);
   const { data: waConfig } = useWhatsappConfigQuery(company?.id);
@@ -70,6 +81,10 @@ export default function NewCampaignDialog({
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("all");
+  const [segmentFilter, setSegmentFilter] = useState("all");
+  useEffect(() => {
+    if (open) setSegmentFilter(initialSegmentId ?? "all");
+  }, [open, initialSegmentId]);
   const [smartFilter, setSmartFilter] = useState<ContactFilter>("all");
   const [flowId, setFlowId] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -101,11 +116,15 @@ export default function NewCampaignDialog({
     return eligible.filter((c) => {
       if (stageFilter !== "all" && c.stage !== stageFilter) return false;
       if (tagFilter !== "all" && !c.tags?.includes(tagFilter)) return false;
+      if (segmentFilter !== "all") {
+        const seg = segments.find((s) => s.id === segmentFilter);
+        if (!seg || !matchesSegment(c, seg.rules, metrics, coupons)) return false;
+      }
       if (!matchesContactFilter(c, smartFilter)) return false;
       if (!term) return true;
       return c.name.toLowerCase().includes(term) || (c.phone ?? "").includes(term);
     });
-  }, [eligible, search, stageFilter, tagFilter, smartFilter]);
+  }, [eligible, search, stageFilter, tagFilter, segmentFilter, segments, metrics, coupons, smartFilter]);
 
   useEffect(() => {
     if (!template) return;
@@ -406,6 +425,21 @@ export default function NewCampaignDialog({
                   ))}
                 </SelectContent>
               </Select>
+              {segments.length > 0 && (
+                <Select value={segmentFilter} onValueChange={setSegmentFilter}>
+                  <SelectTrigger className="sm:w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os segmentos</SelectItem>
+                    {segments.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               {tagCatalog.length > 0 && (
                 <Select value={tagFilter} onValueChange={setTagFilter}>
                   <SelectTrigger className="sm:w-40">

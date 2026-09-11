@@ -1255,6 +1255,21 @@ async function maybeAiReply(
           .not("status", "in", "(resolvido,cancelado)").order("created_at", { ascending: false }).limit(3)
       : Promise.resolve({ data: null }),
   ]);
+  const { data: activeCouponsRaw } = await supabase
+    .from("crm_coupons")
+    .select("code, kind, discount_type, value, expires_at")
+    .eq("contact_id", contact.id)
+    .eq("status", "ativo")
+    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+    .limit(5);
+  const activeCoupons = (activeCouponsRaw ?? []) as Array<{ code: string; kind: string; discount_type: string; value: number; expires_at: string | null }>;
+  const couponsBrief = activeCoupons.length > 0
+    ? "\n\nCréditos deste lead (pode lembrar quando fizer sentido): " +
+      activeCoupons.map((c) =>
+        `${c.kind === "giftback" ? "giftback" : "cupom"} ${c.code} de ${c.discount_type === "percent" ? `${c.value}%` : `R$ ${Number(c.value).toFixed(2).replace(".", ",")}`}` +
+        (c.expires_at ? ` válido até ${new Date(c.expires_at).toLocaleDateString("pt-BR")}` : "")
+      ).join("; ")
+    : "";
   const openOrders = (openOrdersRaw ?? []) as Array<{ number: number; status: string; items: Array<{ name: string; qty: number }> }>;
   const openTickets = (openTicketsRaw ?? []) as Array<{ number: number; status: string; title: string }>;
   const opsBrief =
@@ -1299,7 +1314,8 @@ async function maybeAiReply(
         contactBrief(fieldDefs, fieldValues) +
         recordsBrief(recordTypes, contactRecords) +
         tagsBrief(tagDefs, contactTags) +
-        opsBrief,
+        opsBrief +
+        couponsBrief,
     },
     ...((history ?? []) as Array<{ sender: string; content: string }>)
       .slice()
@@ -2107,6 +2123,31 @@ async function runSelftest(supabase: Db, verifyToken: string, textoTeste: string
   return json(out);
 }
 
+/**
+ * Assinatura da Meta: HMAC-SHA256 do corpo cru com o App Secret, no header
+ * X-Hub-Signature-256. Sem ela, qualquer um na internet forja mensagens de
+ * entrada e faz a IA responder para um número arbitrário.
+ *
+ * Só é exigida quando META_APP_SECRET está configurado: quem recebe pelo
+ * Datafy (proxy) pode não ter a assinatura original, e recusar tudo seria
+ * pior do que o estado atual. Com o secret definido, requisição sem
+ * assinatura válida é recusada.
+ */
+async function verifyMetaSignature(rawBody: string, header: string | null, secret: string): Promise<boolean> {
+  const given = header?.trim();
+  if (!given || !given.startsWith("sha256=")) return false;
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody)));
+  const expected = "sha256=" + Array.from(mac).map((b) => b.toString(16).padStart(2, "0")).join("");
+  // Comparação em tempo constante: o tamanho é fixo, então basta somar as diferenças.
+  if (expected.length !== given.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ given.charCodeAt(i);
+  return diff === 0;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -2148,7 +2189,15 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   try {
-    const payload = await req.json();
+    // Corpo cru primeiro: a assinatura da Meta é calculada sobre os bytes
+    // exatos, e req.json() os descartaria.
+    const rawBody = await req.text();
+    let payload: any;
+    try {
+      payload = JSON.parse(rawBody);
+    } catch {
+      return json({ error: "corpo inválido" }, 400);
+    }
 
     // Evolution API: envelope próprio ({ event, instance, apikey, data }), sem
     // entry/changes. Normalizamos para o mesmo `value` da Meta e caímos no
@@ -2262,6 +2311,15 @@ Deno.serve(async (req: Request) => {
 
     const entries = (payload?.entry ?? []) as Array<Record<string, any>>;
     if (entries.length === 0) return json({ ok: true, ignored: "no entry" });
+
+    const appSecret = Deno.env.get("META_APP_SECRET")?.trim();
+    if (appSecret) {
+      const ok = await verifyMetaSignature(rawBody, req.headers.get("x-hub-signature-256"), appSecret);
+      if (!ok) {
+        console.log("webhook: assinatura da Meta inválida ou ausente");
+        return json({ error: "assinatura inválida" }, 401);
+      }
+    }
 
     // Um payload pode trazer vários changes (ex.: "messages" e
     // "smb_message_echoes" juntos). Ler só o primeiro descartava os echoes.

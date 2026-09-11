@@ -43,7 +43,7 @@ type Db = any;
 type Rule = {
   id: string;
   company_id: string;
-  kind: "aniversario" | "reativacao" | "nps" | "data" | "agenda";
+  kind: "aniversario" | "reativacao" | "nps" | "data" | "agenda" | "giftback";
   message: string;
   title: string | null;
   field_key: string | null;
@@ -265,6 +265,77 @@ async function runAgendaRule(
   return { sent, failed };
 }
 
+type GiftbackTarget = {
+  id: string;
+  code: string;
+  value: number;
+  expires_at: string;
+  contact_id: string;
+  contacts: { name: string | null; phone: string | null } | null;
+};
+
+const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+/** Giftback ativo vencendo em N dias (N em crm_giftback_settings). Um aviso por cupom. */
+async function runGiftbackRule(
+  supabase: Db,
+  rule: Rule,
+  config: OutboundConfig,
+  timezone: string,
+): Promise<{ sent: number; failed: number }> {
+  const { data: cfg } = await supabase
+    .from("crm_giftback_settings").select("reminder_days").eq("company_id", rule.company_id).maybeSingle();
+  const days = Math.max(0, Number((cfg as { reminder_days?: number } | null)?.reminder_days ?? 3));
+  const until = new Date(Date.now() + (days + 1) * 86_400_000).toISOString();
+
+  const { data: targets } = await supabase
+    .from("crm_coupons")
+    .select("id, code, value, expires_at, contact_id, contacts(name, phone)")
+    .eq("company_id", rule.company_id)
+    .eq("kind", "giftback")
+    .eq("status", "ativo")
+    .is("reminder_sent_at", null)
+    .not("contact_id", "is", null)
+    .gt("expires_at", new Date().toISOString())
+    .lte("expires_at", until)
+    .limit(MAX_PER_RULE);
+
+  let sent = 0;
+  let failed = 0;
+  for (const t of (targets ?? []) as GiftbackTarget[]) {
+    const phone = t.contacts?.phone;
+    if (!phone) continue;
+    const usage = await consumeCoins(supabase, rule.company_id, "followup_out", { contactId: t.contact_id, ref: "giftback" });
+    if (!usage.allowed) break;
+
+    const validade = new Intl.DateTimeFormat("pt-BR", { timeZone: timezone, day: "2-digit", month: "2-digit" }).format(new Date(t.expires_at));
+    const text = renderPlaceholders(
+      rule.message
+        .replace(/\{\{\s*codigo\s*\}\}/gi, t.code)
+        .replace(/\{\{\s*valor\s*\}\}/gi, brl(Number(t.value)))
+        .replace(/\{\{\s*validade\s*\}\}/gi, validade),
+      t.contacts?.name ?? null,
+    );
+    const { messageId, error } = await sendText(config, normalizePhone(phone), text);
+    await supabase.from("relationship_logs").insert({
+      company_id: rule.company_id, rule_id: rule.id, contact_id: t.contact_id, kind: "giftback",
+      status: error ? "failed" : "sent", content: text, message_ref: messageId, error,
+    });
+    if (error) {
+      failed += 1;
+    } else {
+      sent += 1;
+      await supabase.from("conversations").insert({
+        user_id: null, company_id: rule.company_id, contact_id: t.contact_id, sender: "ai", content: text,
+        channel: "whatsapp", message_ref: messageId, metadata: { deliveryStatus: "sent", relationshipRule: "giftback" },
+      });
+      await supabase.from("crm_coupons").update({ reminder_sent_at: new Date().toISOString() }).eq("id", t.id);
+    }
+    await sleep(SEND_INTERVAL_MS);
+  }
+  return { sent, failed };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -318,6 +389,8 @@ Deno.serve(async (req: Request) => {
 
       const outcome = rule.kind === "agenda"
         ? await runAgendaRule(supabase, rule, config, timezone)
+        : rule.kind === "giftback"
+        ? await runGiftbackRule(supabase, rule, config, timezone)
         : await runRule(supabase, rule, config);
       results.push({ company_id: rule.company_id, kind: rule.kind, title: rule.title, ...outcome });
     }
