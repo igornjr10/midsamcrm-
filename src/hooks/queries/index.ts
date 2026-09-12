@@ -13,6 +13,7 @@ export * from "./useOrdersQuery";
 export * from "./useTicketsQuery";
 export * from "./useResourcesQuery";
 export * from "./useRetailQuery";
+export * from "./useAutomationTemplatesQuery";
 export * from "./useLibraryQuery";
 export * from "./useAppointmentsQuery";
 export * from "./useGoogleCalendarQuery";

@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SkeletonForm } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/layout/PageHeader";
+import AutomationTemplatesCard from "@/components/settings/AutomationTemplatesCard";
 
 const DATAFY_API_BASE = "https://cloud.datafyapi.com.br/v1";
 
@@ -560,6 +561,8 @@ export default function Settings() {
         </Card>
       ) : (
       <>
+      <AutomationTemplatesCard />
+
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>URL do Webhook</CardTitle>

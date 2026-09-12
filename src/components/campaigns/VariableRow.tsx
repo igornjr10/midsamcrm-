@@ -4,7 +4,9 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-const SOURCE_OPTIONS: VariableSource["source"][] = [
+// "context" fica de fora: os dados do evento só existem nas automações
+// (Configurações → Templates das automações), não numa campanha em massa.
+const SOURCE_OPTIONS: Exclude<VariableSource["source"], "context">[] = [
   "contact_first_name",
   "contact_name",
   "contact_phone",

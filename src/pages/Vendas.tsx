@@ -142,7 +142,18 @@ export default function Vendas() {
         const gb = data as Coupon | null;
         if (gb && contact?.phone) {
           try {
-            await sendWhatsappText({ company_id: company.id, contact_id: contact.id, phone: contact.phone, text: renderGiftback(giftback.message, gb, contact) });
+            await sendWhatsappText({
+              company_id: company.id,
+              contact_id: contact.id,
+              phone: contact.phone,
+              text: renderGiftback(giftback.message, gb, contact),
+              purpose: "giftback",
+              context: {
+                codigo: gb.code,
+                valor: money(gb.value),
+                validade: gb.expires_at ? new Date(gb.expires_at).toLocaleDateString("pt-BR") : "",
+              },
+            });
             await updateCoupon.mutateAsync({ id: gb.id, company_id: company.id, sent_at: new Date().toISOString() });
             toast.success(`Giftback ${gb.code} enviado para ${contactLabel(contact)}.`);
           } catch (err) {

@@ -80,7 +80,12 @@ export function defaultVariables(count: number, firstIsName: boolean): VariableS
   );
 }
 
-export const VARIABLE_SOURCE_LABELS: Record<VariableSource["source"], string> = {
+/** Fontes que valem em qualquer template. A fonte "context" depende da
+ *  automação e é oferecida à parte, com o rótulo do dado. */
+export const VARIABLE_SOURCE_LABELS: Record<
+  Exclude<VariableSource["source"], "context">,
+  string
+> = {
   contact_name: "Nome do contato",
   contact_first_name: "Primeiro nome",
   contact_phone: "Telefone",

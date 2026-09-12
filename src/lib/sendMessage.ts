@@ -10,6 +10,14 @@ export async function sendWhatsappText(params: {
   contact_id: string;
   phone: string;
   text: string;
+  /**
+   * Automação (giftback, pedido_status, vaga...). Com ele, o servidor decide:
+   * dentro da janela de 24h da Meta manda este texto; fora dela, manda o
+   * template aprovado que a empresa mapeou em Configurações.
+   */
+  purpose?: string;
+  /** Dados do evento para as variáveis do template: código, número, hora. */
+  context?: Record<string, string>;
 }): Promise<void> {
   const { data, error } = await supabase.functions.invoke("whatsapp-send?action=send-text", {
     body: params,

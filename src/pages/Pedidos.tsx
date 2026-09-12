@@ -112,6 +112,11 @@ export default function Pedidos() {
         contact_id: contact.id,
         phone: contact.phone,
         text: statusMessage(order, contact, status),
+        purpose: "pedido_status",
+        context: {
+          numero: String(order.number),
+          status: ORDER_STATUSES.find((s) => s.id === status)?.label ?? status,
+        },
       });
       toast.success(`Cliente avisado: pedido #${order.number}.`);
     } catch (err) {
