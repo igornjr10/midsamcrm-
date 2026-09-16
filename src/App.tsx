@@ -7,6 +7,8 @@ import { Toaster } from "@/components/ui/sonner";
 import AppLayout from "@/components/layout/AppLayout";
 import ErrorBoundary from "@/components/layout/ErrorBoundary";
 import Login from "@/pages/Login";
+import ForgotPassword from "@/pages/ForgotPassword";
+import ResetPassword from "@/pages/ResetPassword";
 import Pipeline from "@/pages/Pipeline";
 import Contacts from "@/pages/Contacts";
 import Chat from "@/pages/Chat";
@@ -61,6 +63,10 @@ export default function App() {
             <ErrorBoundary>
               <Routes>
                 <Route path="/login" element={<Login />} />
+                {/* Fora do AppLayout: quem chega aqui ainda não tem sessão
+                    de verdade, e o layout mandaria de volta para o login. */}
+                <Route path="/esqueci-senha" element={<ForgotPassword />} />
+                <Route path="/redefinir-senha" element={<ResetPassword />} />
                 <Route element={<AppLayout />}>
                   <Route path="/" element={<Pipeline />} />
                   <Route path="/contatos" element={<Contacts />} />

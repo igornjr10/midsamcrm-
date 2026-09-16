@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -42,7 +42,15 @@ export default function Login() {
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="password">Senha</Label>
+          <div className="flex items-baseline justify-between gap-2">
+            <Label htmlFor="password">Senha</Label>
+            <Link
+              to="/esqueci-senha"
+              className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Esqueci minha senha
+            </Link>
+          </div>
           <Input
             id="password"
             type="password"
