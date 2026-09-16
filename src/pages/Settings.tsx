@@ -25,6 +25,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { SkeletonForm } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/layout/PageHeader";
 import AutomationTemplatesCard from "@/components/settings/AutomationTemplatesCard";
+import ChangePasswordCard from "@/components/settings/ChangePasswordCard";
 
 const DATAFY_API_BASE = "https://cloud.datafyapi.com.br/v1";
 
@@ -894,6 +895,8 @@ export default function Settings() {
           )}
         </CardContent>
       </Card>
+
+      <ChangePasswordCard />
     </div>
   );
 }
