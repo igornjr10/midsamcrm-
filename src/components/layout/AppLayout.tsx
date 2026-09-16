@@ -4,6 +4,7 @@ import {
   Kanban, Users, MessageSquare, CalendarDays, Settings, LogOut, Loader2, Bot, Library,
   Building2, Megaphone, Moon, Sun, Eye, Menu, X, ShoppingBag, LifeBuoy,
   LayoutDashboard, Receipt, ClipboardCheck, Filter, Gift, MousePointerClick,
+  PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -52,13 +53,27 @@ const SUPER_ADMIN_GROUP = {
   items: [{ to: "/empresas", label: "Empresas", icon: Building2 }],
 };
 
-const navLinkClass = ({ isActive }: { isActive: boolean }) =>
-  cn(
-    "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-[13.5px] font-medium transition-colors duration-150",
-    isActive
-      ? "bg-primary/10 text-primary dark:bg-primary/15"
-      : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
-  );
+const navLinkClass = (collapsed: boolean) =>
+  ({ isActive }: { isActive: boolean }) =>
+    cn(
+      "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-[13.5px] font-medium transition-colors duration-150",
+      // Recolhida (só no desktop): o item vira um quadrado com o ícone no centro.
+      collapsed && "lg:justify-center lg:px-0",
+      isActive
+        ? "bg-primary/10 text-primary dark:bg-primary/15"
+        : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+    );
+
+// A preferência de sidebar recolhida vale só no desktop e sobrevive ao reload.
+const SIDEBAR_COLLAPSED_KEY = "midsam.sidebar.collapsed";
+
+function readCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 export default function AppLayout() {
   const { user, company, ownCompany, isSuperAdmin, isImpersonating, loading, leaveCompany, signOut } =
@@ -68,7 +83,18 @@ export default function AppLayout() {
   // No mobile a navegação é uma gaveta sobre o conteúdo; a partir de lg ela
   // volta a ser coluna fixa e este estado deixa de ter efeito.
   const [navOpen, setNavOpen] = useState(false);
+  // Desktop: sidebar recolhida em coluna de ícones. No mobile a gaveta ignora
+  // este estado — ela já some por completo quando fechada.
+  const [collapsed, setCollapsed] = useState(readCollapsed);
   const { pathname } = useLocation();
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
+    } catch {
+      /* armazenamento indisponível: a preferência dura só esta sessão */
+    }
+  }, [collapsed]);
 
   // Fecha ao navegar — senão a gaveta cobre a tela que o usuário acabou de abrir.
   useEffect(() => setNavOpen(false), [pathname]);
@@ -127,16 +153,29 @@ export default function AppLayout() {
         className={cn(
           "z-40 flex w-64 flex-shrink-0 flex-col border-r border-sidebar-border bg-sidebar",
           // Mobile: gaveta deslizante fora do fluxo.
-          "fixed inset-y-0 left-0 h-screen transition-transform duration-200",
+          "fixed inset-y-0 left-0 h-screen transition-[transform,width] duration-200",
           navOpen ? "translate-x-0" : "-translate-x-full",
           // lg: volta a ser coluna do layout, sempre visível. bottom/left
           // precisam ser desfeitos — `inset-y-0` deixaria o sticky com top e
           // bottom ao mesmo tempo, que não é o que a coluna fixa quer.
           "lg:sticky lg:bottom-auto lg:left-auto lg:top-0 lg:translate-x-0",
+          collapsed && "lg:w-[68px]",
         )}
       >
-        <div className="flex h-16 items-center justify-between border-b border-sidebar-border px-4">
-          <Logo />
+        <div
+          className={cn(
+            "flex h-16 items-center justify-between border-b border-sidebar-border px-4",
+            collapsed && "lg:flex-col lg:justify-center lg:gap-0.5 lg:px-0",
+          )}
+        >
+          {collapsed ? (
+            <>
+              <Logo className="lg:hidden" />
+              <LogoMark className="hidden h-7 w-7 lg:block" />
+            </>
+          ) : (
+            <Logo />
+          )}
           <button
             onClick={() => setNavOpen(false)}
             aria-label="Fechar menu"
@@ -144,21 +183,49 @@ export default function AppLayout() {
           >
             <X className="h-5 w-5" />
           </button>
+          {/* Só no desktop: recolhe para uma coluna de ícones e expande de volta. */}
+          <button
+            onClick={() => setCollapsed((c) => !c)}
+            title={collapsed ? "Expandir menu" : "Recolher menu"}
+            aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
+            aria-expanded={!collapsed}
+            className={cn(
+              "hidden rounded-lg text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground lg:block",
+              collapsed ? "p-1" : "-mr-1 p-2",
+            )}
+          >
+            {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-5 w-5" />}
+          </button>
         </div>
 
-        <nav className="scrollbar-slim flex-1 space-y-6 overflow-y-auto px-3 py-5">
-          {groups.map((group) => (
+        <nav
+          className={cn(
+            "scrollbar-slim flex-1 space-y-6 overflow-y-auto px-3 py-5",
+            collapsed && "lg:space-y-3 lg:px-2.5",
+          )}
+        >
+          {groups.map((group, index) => (
             <div key={group.label}>
-              <p className="px-3 pb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">
+              {/* Recolhida: o título do grupo vira uma linha divisória. */}
+              <p
+                className={cn(
+                  "px-3 pb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60",
+                  collapsed && "lg:hidden",
+                )}
+              >
                 {group.label}
               </p>
+              {collapsed && index > 0 && (
+                <div className="mx-2 mb-3 hidden border-t border-sidebar-border lg:block" />
+              )}
               <div className="space-y-0.5">
                 {group.items.filter((item) => routeEnabled(item.to)).map((item) => (
                   <NavLink
                     key={item.to}
                     to={item.to}
                     end={item.to === "/"}
-                    className={navLinkClass}
+                    className={navLinkClass(collapsed)}
+                    title={collapsed ? item.label : undefined}
                   >
                     {({ isActive }) => (
                       <>
@@ -168,12 +235,19 @@ export default function AppLayout() {
                             isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground",
                           )}
                         />
-                        {item.label}
+                        <span className={cn("truncate", collapsed && "lg:hidden")}>{item.label}</span>
                         {/* Quantas conversas têm mensagem que este atendente
                             ainda não viu. Fica no menu porque o aviso precisa
                             existir mesmo com o Chat fechado. */}
                         {item.to === "/chat" && unreadCount > 0 && (
-                          <span className="tabular ml-auto min-w-5 rounded-full bg-primary px-1.5 py-0.5 text-center text-[11px] font-semibold leading-none text-primary-foreground">
+                          <span
+                            className={cn(
+                              "tabular ml-auto min-w-5 rounded-full bg-primary px-1.5 py-0.5 text-center text-[11px] font-semibold leading-none text-primary-foreground",
+                              // Recolhida: o contador sobe para o canto do ícone.
+                              collapsed &&
+                                "lg:absolute lg:right-1 lg:top-0.5 lg:ml-0 lg:min-w-4 lg:px-1 lg:text-[10px]",
+                            )}
+                          >
                             {unreadCount > 99 ? "99+" : unreadCount}
                           </span>
                         )}
@@ -186,12 +260,18 @@ export default function AppLayout() {
           ))}
         </nav>
 
-        <div className="border-t border-sidebar-border p-3">
-          <div className="flex items-center gap-2.5 rounded-xl border border-border/60 bg-muted/40 px-2.5 py-2">
+        <div className={cn("border-t border-sidebar-border p-3", collapsed && "lg:p-2")}>
+          <div
+            className={cn(
+              "flex items-center gap-2.5 rounded-xl border border-border/60 bg-muted/40 px-2.5 py-2",
+              collapsed && "lg:justify-center lg:border-0 lg:bg-transparent lg:p-0",
+            )}
+            title={collapsed ? [company?.name, user.email].filter(Boolean).join(" · ") : undefined}
+          >
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/70 text-sm font-semibold text-primary-foreground shadow-glow-sm">
               {initials}
             </span>
-            <div className="min-w-0 flex-1">
+            <div className={cn("min-w-0 flex-1", collapsed && "lg:hidden")}>
               {company?.name && (
                 <p className="truncate text-sm font-medium leading-tight">{company.name}</p>
               )}
@@ -199,28 +279,34 @@ export default function AppLayout() {
             </div>
           </div>
 
-          <div className="mt-2 flex items-center gap-1">
+          <div className={cn("mt-2 flex items-center gap-1", collapsed && "lg:flex-col lg:gap-0.5")}>
             <button
               onClick={toggleTheme}
               title={resolved === "dark" ? "Mudar para tema claro" : "Mudar para tema escuro"}
               aria-label={resolved === "dark" ? "Mudar para tema claro" : "Mudar para tema escuro"}
-              className="flex flex-1 items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+              className={cn(
+                "flex flex-1 items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground",
+                collapsed && "lg:w-full lg:flex-none lg:justify-center lg:px-0",
+              )}
             >
               {resolved === "dark" ? (
                 <Sun className="h-[18px] w-[18px] shrink-0" />
               ) : (
                 <Moon className="h-[18px] w-[18px] shrink-0" />
               )}
-              Tema
+              <span className={cn(collapsed && "lg:hidden")}>Tema</span>
             </button>
             <button
               onClick={() => void signOut()}
               title="Sair da conta"
               aria-label="Sair da conta"
-              className="flex flex-1 items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+              className={cn(
+                "flex flex-1 items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive",
+                collapsed && "lg:w-full lg:flex-none lg:justify-center lg:px-0",
+              )}
             >
               <LogOut className="h-[18px] w-[18px] shrink-0" />
-              Sair
+              <span className={cn(collapsed && "lg:hidden")}>Sair</span>
             </button>
           </div>
         </div>
