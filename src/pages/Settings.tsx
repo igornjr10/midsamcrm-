@@ -63,9 +63,7 @@ async function functionErrorMessage(error: unknown, data: unknown): Promise<stri
 }
 
 const PROVIDER_LABEL: Record<string, string> = {
-  evolution: "Evolution",
   uazapi: "UAZAPI",
-  openwa: "OpenWA",
 };
 
 const STATE_LABEL: Record<InstanceState, string> = {
@@ -92,10 +90,10 @@ export default function Settings() {
   const [statusLoading, setStatusLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
-  // Provedor em edição. Antes de existir config, o padrão é Evolution: conectar
+  // Provedor em edição. Antes de existir config, o padrão é UAZAPI: conectar
   // por QR não exige nada do cliente, e a Cloud API depende de credencial que
   // só quem já tem conta Meta consegue.
-  const [provider, setProvider] = useState<WhatsappProvider>("evolution");
+  const [provider, setProvider] = useState<WhatsappProvider>("uazapi");
   const [qr, setQr] = useState<string | null>(null);
   /** Quantas vezes o código já foi renovado nesta tentativa. */
   const [qrRounds, setQrRounds] = useState(0);
@@ -447,11 +445,9 @@ export default function Settings() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-2">
             {([
-              ["evolution", "QR code · Evolution", "Servidor próprio"],
               ["uazapi", "QR code · UAZAPI", "Serviço hospedado"],
-              ["openwa", "QR code · OpenWA", "Painel próprio"],
               ["meta", "Cloud API · Datafy", "Credenciais da Meta"],
             ] as const).map(([value, title, hint]) => (
               <button
@@ -555,7 +551,7 @@ export default function Settings() {
             )}
 
             <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
-              O webhook é apontado sozinho na criação — não precisa configurar nada no painel do Evolution.
+              O webhook é apontado sozinho na criação — não precisa configurar nada no painel do provedor.
               Campanhas nesse modo saem como texto livre: template aprovado só existe na Cloud API.
             </p>
           </CardContent>
