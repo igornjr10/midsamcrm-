@@ -1,9 +1,9 @@
-// Renomeia uma empresa e/ou troca o e-mail de login do dono dela.
+// Renomeia uma empresa e/ou troca o e-mail e a senha de login do dono dela.
 // Restrito ao super admin do produto.
 //
 // O rename sozinho caberia no client (a RLS já deixa o super admin escrever em
-// companies), mas o e-mail está em auth.users e só a service role muda —
-// então as duas coisas ficam aqui, numa chamada só.
+// companies), mas e-mail e senha estão em auth.users e só a service role muda —
+// então as três coisas ficam aqui, numa chamada só.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 
 const corsHeaders = {
@@ -50,13 +50,21 @@ Deno.serve(async (req: Request) => {
       company_id?: string;
       company_name?: string;
       email?: string;
+      password?: string;
     };
     const companyId = body.company_id?.trim();
     const name = body.company_name?.trim();
     const email = body.email?.trim();
+    // Senha não leva trim: espaço no meio é caractere válido, e nas pontas é
+    // escolha de quem digitou — cortar aqui guardaria algo diferente do que a
+    // pessoa vai digitar no login.
+    const password = body.password;
 
     if (!companyId) return json({ error: "company_id é obrigatório" }, 400);
-    if (!name && !email) return json({ error: "Nada para alterar" }, 400);
+    if (!name && !email && !password) return json({ error: "Nada para alterar" }, 400);
+    if (password !== undefined && password.length < 8) {
+      return json({ error: "A senha precisa ter pelo menos 8 caracteres" }, 400);
+    }
     if (name !== undefined && name === "") return json({ error: "O nome da empresa não pode ficar vazio" }, 400);
 
     // Dono = membership 'admin' mais antiga (mesma regra de public.company_owners).
@@ -82,6 +90,16 @@ Deno.serve(async (req: Request) => {
           : emailError.message;
         return json({ error: msg }, 400);
       }
+    }
+
+    // Senha depois do e-mail e antes do nome, pela mesma razão: as duas mexem
+    // em auth.users, e falhar aqui deixa o nome da empresa ainda intocado.
+    if (password) {
+      if (!owner) return json({ error: "Esta empresa não tem usuário vinculado para trocar a senha" }, 400);
+      const { error: passwordError } = await admin.auth.admin.updateUserById(owner.user_id, {
+        password,
+      });
+      if (passwordError) return json({ error: passwordError.message }, 400);
     }
 
     if (name) {

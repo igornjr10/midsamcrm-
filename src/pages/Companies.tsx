@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, LogIn, Pencil, Plus, SlidersHorizontal } from "lucide-react";
+import { Building2, LogIn, Pencil, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -34,7 +34,7 @@ async function readFunctionError(error: unknown): Promise<string | null> {
 }
 
 export default function Companies() {
-  const { isSuperAdmin, company: activeCompany, enterCompany } = useAuth();
+  const { isSuperAdmin, company: activeCompany, enterCompany, leaveCompany } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
@@ -43,7 +43,12 @@ export default function Companies() {
   const [editing, setEditing] = useState<CompanyRow | null>(null);
   const [modulesFor, setModulesFor] = useState<CompanyRow | null>(null);
   const [saving, setSaving] = useState(false);
-  const [editForm, setEditForm] = useState({ company_name: "", email: "" });
+  const [editForm, setEditForm] = useState({ company_name: "", email: "", password: "" });
+  // Remoção fica num estado próprio: o diálogo de editar não pode ser o mesmo
+  // lugar de onde se apaga, senão um clique errado vira estrago.
+  const [removing, setRemoving] = useState<CompanyRow | null>(null);
+  const [removeConfirm, setRemoveConfirm] = useState("");
+  const [removeBusy, setRemoveBusy] = useState(false);
 
   const { data: companies = [], isPending } = useQuery({
     queryKey: ["all-companies"] as const,
@@ -126,7 +131,7 @@ export default function Companies() {
   };
 
   const openEdit = (c: CompanyRow) => {
-    setEditForm({ company_name: c.name, email: owners?.get(c.id) ?? "" });
+    setEditForm({ company_name: c.name, email: owners?.get(c.id) ?? "", password: "" });
     setEditing(c);
   };
 
@@ -141,13 +146,27 @@ export default function Companies() {
 
     // Manda só o que mudou — assim um e-mail intocado não dispara troca no Auth.
     const currentEmail = owners?.get(editing.id) ?? "";
-    const payload: { company_id: string; company_name?: string; email?: string } = {
+    const payload: {
+      company_id: string;
+      company_name?: string;
+      email?: string;
+      password?: string;
+    } = {
       company_id: editing.id,
     };
     if (name !== editing.name) payload.company_name = name;
     if (email && email !== currentEmail) payload.email = email;
+    // Campo em branco = não mexer na senha. Sem isso, salvar só o nome
+    // redefiniria a senha do cliente para vazio sem ninguém pedir.
+    if (editForm.password) {
+      if (editForm.password.length < 8) {
+        toast.error("A nova senha precisa ter pelo menos 8 caracteres.");
+        return;
+      }
+      payload.password = editForm.password;
+    }
 
-    if (!payload.company_name && !payload.email) {
+    if (!payload.company_name && !payload.email && !payload.password) {
       setEditing(null);
       return;
     }
@@ -167,7 +186,7 @@ export default function Companies() {
         enterCompany({ ...activeCompany, name });
       }
 
-      toast.success("Empresa atualizada.");
+      toast.success(payload.password ? "Empresa atualizada e senha trocada." : "Empresa atualizada.");
       setEditing(null);
       void queryClient.invalidateQueries({ queryKey: ["all-companies"] });
       void queryClient.invalidateQueries({ queryKey: ["company-owners"] });
@@ -175,6 +194,38 @@ export default function Companies() {
       toast.error(err instanceof Error ? err.message : "Erro ao atualizar empresa");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleRemove = async () => {
+    if (!removing) return;
+    setRemoveBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("admin-delete-company", {
+        body: { company_id: removing.id, confirm_name: removing.name },
+      });
+      if (error || data?.error) {
+        throw new Error((await readFunctionError(error)) || data?.error || error?.message);
+      }
+
+      // Estava vendo o CRM dessa empresa? O id agora aponta para nada, e sem
+      // soltar ele o app tentaria carregar uma empresa que não existe mais.
+      if (activeCompany?.id === removing.id) leaveCompany();
+
+      const apagados = Number(data?.deleted_users ?? 0);
+      toast.success(
+        apagados > 0
+          ? `Empresa "${removing.name}" removida, junto de ${apagados} usuário(s).`
+          : `Empresa "${removing.name}" removida.`,
+      );
+      setRemoving(null);
+      setRemoveConfirm("");
+      void queryClient.invalidateQueries({ queryKey: ["all-companies"] });
+      void queryClient.invalidateQueries({ queryKey: ["company-owners"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao remover empresa");
+    } finally {
+      setRemoveBusy(false);
     }
   };
 
@@ -347,6 +398,19 @@ export default function Companies() {
                           <SlidersHorizontal />
                           Módulos
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setRemoveConfirm("");
+                            setRemoving(c);
+                          }}
+                          aria-label={`Remover ${c.name}`}
+                          className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <Trash2 />
+                          Remover
+                        </Button>
                         {activeCompany?.id === c.id ? (
                           <Badge variant="secondary">Em uso</Badge>
                         ) : (
@@ -378,7 +442,8 @@ export default function Companies() {
           <DialogHeader>
             <DialogTitle>Editar empresa</DialogTitle>
             <DialogDescription>
-              Trocar o e-mail muda o login do responsável pela empresa. A senha continua a mesma.
+              E-mail e senha são os do responsável pela empresa. Deixe a senha em branco para
+              mantê-la como está.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -397,9 +462,82 @@ export default function Companies() {
                 onChange={(e) => setEditForm((p) => ({ ...p, email: e.target.value }))}
               />
             </div>
+            <div className="space-y-1.5">
+              <Label>Nova senha</Label>
+              <Input
+                type="password"
+                autoComplete="new-password"
+                placeholder="Deixe em branco para não alterar"
+                value={editForm.password}
+                onChange={(e) => setEditForm((p) => ({ ...p, password: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">
+                Mínimo de 8 caracteres. O cliente não é avisado — combine a troca com ele.
+              </p>
+            </div>
             <Button className="w-full" onClick={handleSaveEdit} disabled={saving}>
               {saving ? "Salvando..." : "Salvar"}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!removing}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRemoving(null);
+            setRemoveConfirm("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Remover {removing?.name}</DialogTitle>
+            <DialogDescription>
+              Isto não tem desfazer e não existe lixeira.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-xs text-muted-foreground">
+              Some junto com a empresa: contatos, conversas e todo o histórico de mensagens,
+              vendas, agendamentos, campanhas, pedidos e chamados. O usuário de login também é
+              apagado — a não ser que ele ainda pertença a outra empresa.
+            </div>
+            <div className="space-y-1.5">
+              <Label>
+                Digite <span className="font-semibold text-foreground">{removing?.name}</span> para
+                confirmar
+              </Label>
+              <Input
+                value={removeConfirm}
+                autoComplete="off"
+                onChange={(e) => setRemoveConfirm(e.target.value)}
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setRemoving(null);
+                  setRemoveConfirm("");
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="destructive"
+                className="flex-1"
+                // O nome tem que bater exatamente. A function confere de novo no
+                // servidor: esta trava é contra o clique errado, não a única.
+                disabled={removeBusy || removeConfirm.trim() !== removing?.name.trim()}
+                onClick={() => void handleRemove()}
+              >
+                <Trash2 />
+                {removeBusy ? "Removendo..." : "Remover para sempre"}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
