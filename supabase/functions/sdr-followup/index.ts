@@ -22,6 +22,9 @@ import { parseWhatsAppApiError } from "../_shared/whatsapp-error.ts";
 import { resolveCompanyId } from "../_shared/company.ts";
 import { todayBrief } from "../_shared/date.ts";
 import { buildTemplatePayload, renderTemplateText, type VariableMap } from "../_shared/whatsapp-template.ts";
+import {
+  OUTBOUND_COLUMNS, sendText as sendOutboundText, type OutboundConfig,
+} from "../_shared/whatsapp-out.ts";
 
 // Sem os genéricos explícitos o ReturnType resolve para os defaults (never) e
 // não aceita o cliente real.
@@ -91,11 +94,11 @@ type Candidate = {
   followups_done: number;
 };
 
-type WhatsappConfig = {
+// user_id nao esta em OUTBOUND_COLUMNS (o espelho no chat precisa dele), entao
+// o tipo soma os dois: o que o remetente compartilhado exige mais o que esta
+// function usa por fora dele.
+type WhatsappConfig = OutboundConfig & {
   user_id: string;
-  phone_number_id: string;
-  access_token: string;
-  api_base_url: string;
 };
 
 type CompanyResult = {
@@ -142,30 +145,23 @@ function renderMessage(template: string, contact: Candidate): string {
     .trim();
 }
 
+/**
+ * Envia por qualquer provedor, delegando ao remetente compartilhado.
+ *
+ * Existia aqui uma cópia que postava direto na Graph API. Numa empresa de QR
+ * code o phone_number_id e o access_token são nulos, então ela virava um POST
+ * para `.../null/messages` com `Bearer null`: o follow-up automático dessas
+ * empresas nunca saiu. As automações já tinham migrado para o módulo
+ * compartilhado; esta função tinha ficado para trás.
+ */
 async function sendText(
   config: WhatsappConfig,
   phone: string,
   text: string,
 ): Promise<string | null> {
-  const base = resolveApiBase(config.api_base_url);
-  const res = await fetch(`${base}/${config.phone_number_id}/messages`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.access_token}`,
-    },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      recipient_type: "individual",
-      to: phone,
-      type: "text",
-      text: { preview_url: false, body: text },
-    }),
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!res.ok) throw new Error(parseWhatsAppApiError(await res.text().catch(() => "")));
-  const data = await res.json().catch(() => ({})) as { messages?: Array<{ id?: string }> };
-  return data.messages?.[0]?.id ?? null;
+  const { messageId, error } = await sendOutboundText(config, phone, text);
+  if (error) throw new Error(error);
+  return messageId;
 }
 
 /** Texto do follow-up escrito pelo agente, com o histórico recente como contexto. */
@@ -256,7 +252,7 @@ async function runCompany(
 
   const { data: waConfigRaw } = await supabase
     .from("whatsapp_configs")
-    .select("user_id, phone_number_id, access_token, api_base_url, active")
+    .select(`user_id, active, ${OUTBOUND_COLUMNS}`)
     .eq("company_id", aiConfig.company_id)
     .eq("active", true)
     .maybeSingle();
@@ -306,13 +302,30 @@ async function runCompany(
       kind: step.kind,
     };
 
-    // Texto livre só passa dentro das 24h desde a última mensagem do contato.
-    const sessionOpen = lastInboundAt !== null && now - lastInboundAt < SESSION_WINDOW_MS;
-    if (step.kind !== "template" && !sessionOpen) {
+    // A janela de 24h é regra da Cloud API da Meta: fora dela, só template
+    // aprovado entrega. Conexão por QR code não tem janela nem template — é
+    // uma sessão comum do WhatsApp, e texto livre sai a qualquer hora.
+    const isMeta = waConfig.provider === "meta";
+
+    if (isMeta) {
+      const sessionOpen = lastInboundAt !== null && now - lastInboundAt < SESSION_WINDOW_MS;
+      if (step.kind !== "template" && !sessionOpen) {
+        await supabase.from("followup_logs").insert({
+          ...logBase,
+          status: "skipped",
+          error: "Fora da janela de 24h: só um passo do tipo template consegue reabrir a conversa.",
+        });
+        result.skipped++;
+        continue;
+      }
+    } else if (step.kind === "template") {
+      // Passo de template numa empresa de QR code: não há o que enviar. Antes
+      // isto ia para a Graph API com credencial nula e morria como "failed",
+      // o que fazia parecer erro de envio em vez de passo inaplicável.
       await supabase.from("followup_logs").insert({
         ...logBase,
         status: "skipped",
-        error: "Fora da janela de 24h: só um passo do tipo template consegue reabrir a conversa.",
+        error: "Passo de template não se aplica a esta conexão: template aprovado só existe na Cloud API.",
       });
       result.skipped++;
       continue;
@@ -323,6 +336,7 @@ async function runCompany(
       let wamid: string | null;
       let isTemplate = false;
 
+      // Só chega aqui com provider meta: a guarda acima desviou o resto.
       if (step.kind === "template") {
         if (!step.template_name) throw new Error("Passo sem template escolhido.");
         const { payload, bodyParams } = buildTemplatePayload(
