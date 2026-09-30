@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Send, Search, Loader2, Bot, Play, FileText, MessagesSquare, Mic, Library, Paperclip,
-  ArrowLeft, Hand, UserRound,
+  ArrowLeft, Hand, UserRound, Check, CheckCheck, Image as ImageIcon, Video,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase, SUPABASE_URL } from "@/integrations/supabase/client";
@@ -23,7 +24,7 @@ import {
 } from "@/hooks/queries";
 import {
   contactInitial, contactLabel, contactSubtitle, getStageLabel, getStageTone, getToneClasses,
-  LIBRARY_KINDS, teamLabel, type Contact, type LibraryItem,
+  LIBRARY_KINDS, teamLabel, type Contact, type Conversation, type LibraryItem,
 } from "@/lib/types";
 import SendTemplateDialog from "@/components/chat/SendTemplateDialog";
 import ContactPanel from "@/components/chat/ContactPanel";
@@ -39,12 +40,53 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
+// Como o WhatsApp: hora se foi hoje, "Ontem", dia da semana até 6 dias atrás
+// e, dali para trás, a data.
 function timeLabel(iso: string): string {
   const date = new Date(iso);
-  const now = new Date();
-  const sameDay = date.toDateString() === now.toDateString();
-  if (sameDay) return date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((startOfDay(new Date()) - startOfDay(date)) / 86_400_000);
+  if (days <= 0) return date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  if (days === 1) return "Ontem";
+  if (days < 7) {
+    const weekday = date.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
+    return weekday.charAt(0).toUpperCase() + weekday.slice(1);
+  }
+  return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+}
+
+// Mídia sem legenda chega como rótulo ("[Vídeo]"). Na lista vira ícone + nome,
+// que se lê num relance, em vez do texto entre colchetes.
+const MEDIA_PREVIEW: Record<string, { icon: LucideIcon; label: string }> = {
+  "[Imagem]": { icon: ImageIcon, label: "Foto" },
+  "[Vídeo]": { icon: Video, label: "Vídeo" },
+  "[Áudio]": { icon: Mic, label: "Áudio" },
+  "[Documento]": { icon: FileText, label: "Documento" },
+};
+
+/** Linha de prévia da conversa: quem mandou, status de entrega e o conteúdo. */
+function LastMessagePreview({ message }: { message: Conversation | undefined }) {
+  if (!message) return <span className="truncate italic">Sem mensagens</span>;
+
+  const content = (message.content ?? "").trim();
+  const media = MEDIA_PREVIEW[content];
+  const status = message.metadata?.deliveryStatus as string | undefined;
+
+  return (
+    <>
+      {message.sender === "ai" && <Bot className="h-3.5 w-3.5 shrink-0" aria-label="Resposta da IA" />}
+      {message.sender === "user" &&
+        (status === "read" ? (
+          <CheckCheck className="h-3.5 w-3.5 shrink-0 text-sky-500" aria-label="Lida" />
+        ) : status === "delivered" ? (
+          <CheckCheck className="h-3.5 w-3.5 shrink-0" aria-label="Entregue" />
+        ) : (
+          <Check className="h-3.5 w-3.5 shrink-0" aria-label="Enviada" />
+        ))}
+      {media && <media.icon className="h-3.5 w-3.5 shrink-0" />}
+      <span className="truncate">{media ? media.label : content || "Mensagem"}</span>
+    </>
+  );
 }
 
 export default function Chat() {
@@ -285,7 +327,7 @@ export default function Chat() {
           conversa quando um contato é aberto — as duas não cabem lado a lado. */}
       <div
         className={cn(
-          "flex w-full flex-shrink-0 flex-col overflow-hidden rounded-xl border bg-card shadow-card lg:w-72",
+          "flex w-full flex-shrink-0 flex-col overflow-hidden rounded-xl border bg-card shadow-card lg:w-80",
           selectedContact && "hidden lg:flex",
         )}
       >
@@ -325,7 +367,10 @@ export default function Chat() {
             </div>
           )}
         </div>
-        <ScrollArea className="flex-1">
+        {/* Rolagem nativa de propósito: o viewport do ScrollArea (Radix) envolve
+            o conteúdo num display:table que cresce com o texto — o truncate não
+            corta, e a prévia longa empurrava o horário para fora da coluna. */}
+        <div className="scrollbar-slim min-h-0 flex-1 overflow-y-auto">
           {orderedContacts.length === 0 ? (
             <div className="px-4 py-10 text-center">
               <MessagesSquare className="mx-auto mb-2 h-7 w-7 text-muted-foreground/60" />
@@ -346,14 +391,14 @@ export default function Chat() {
                     key={contact.id}
                     onClick={() => setSearchParams({ contato: contact.id })}
                     className={cn(
-                      "mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors",
+                      "mb-0.5 flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left transition-colors",
                       isSelected ? "bg-accent" : "hover:bg-accent/50",
                     )}
                   >
                     <span className="relative shrink-0">
                       <span
                         className={cn(
-                          "flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold",
+                          "flex h-11 w-11 items-center justify-center rounded-full text-base font-semibold",
                           isSelected
                             ? "bg-primary text-primary-foreground"
                             : "bg-primary/10 text-primary",
@@ -372,31 +417,38 @@ export default function Chat() {
                       />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="flex items-center justify-between gap-2">
+                      <span className="flex items-baseline justify-between gap-2">
                         <span
                           className={cn(
                             "truncate text-sm",
-                            isUnread ? "font-bold" : "font-medium",
+                            isUnread ? "font-semibold text-foreground" : "font-medium",
                           )}
                         >
                           {contactLabel(contact)}
                         </span>
-                        <span className="flex shrink-0 items-center gap-1.5">
-                          {last && (
-                            <span className="tabular text-[10px] text-muted-foreground">
-                              {timeLabel(last.created_at)}
-                            </span>
-                          )}
-                          {isUnread && <span className="h-2 w-2 rounded-full bg-primary" />}
-                        </span>
-                      </span>
-                      <span
-                        className={cn(
-                          "block truncate text-xs",
-                          isUnread ? "font-medium text-foreground" : "text-muted-foreground",
+                        {last && (
+                          <span
+                            className={cn(
+                              "tabular shrink-0 text-[11px]",
+                              isUnread ? "font-semibold text-primary" : "text-muted-foreground",
+                            )}
+                          >
+                            {timeLabel(last.created_at)}
+                          </span>
                         )}
-                      >
-                        {last ? last.content : "Sem mensagens"}
+                      </span>
+                      <span className="mt-0.5 flex items-center gap-2">
+                        <span
+                          className={cn(
+                            "flex min-w-0 flex-1 items-center gap-1 text-[13px]",
+                            isUnread ? "font-medium text-foreground" : "text-muted-foreground",
+                          )}
+                        >
+                          <LastMessagePreview message={last} />
+                        </span>
+                        {isUnread && (
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-primary" aria-label="Não lida" />
+                        )}
                       </span>
                       {contact.tags?.length > 0 && (
                         <span className="mt-1 flex flex-wrap gap-1">
@@ -425,7 +477,7 @@ export default function Chat() {
               })}
             </div>
           )}
-        </ScrollArea>
+        </div>
       </div>
 
       {/* Thread */}
