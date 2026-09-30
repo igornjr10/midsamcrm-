@@ -9,6 +9,7 @@ import type { Company } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
@@ -464,8 +465,7 @@ export default function Companies() {
             </div>
             <div className="space-y-1.5">
               <Label>Nova senha</Label>
-              <Input
-                type="password"
+              <PasswordInput
                 autoComplete="new-password"
                 placeholder="Deixe em branco para não alterar"
                 value={editForm.password}

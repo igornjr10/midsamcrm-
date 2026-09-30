@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Eye, EyeOff, KeyRound, Loader2 } from "lucide-react";
+import { ArrowLeft, KeyRound, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { MIN_PASSWORD_LENGTH, passwordErrorMessage, validateNewPassword } from "@/lib/password";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { AuthShell } from "@/components/layout/AuthShell";
 
@@ -43,7 +43,6 @@ export default function ResetPassword() {
 
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [visible, setVisible] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -147,9 +146,8 @@ export default function ResetPassword() {
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="senha-nova">Nova senha</Label>
-          <Input
+          <PasswordInput
             id="senha-nova"
-            type={visible ? "text" : "password"}
             autoComplete="new-password"
             minLength={MIN_PASSWORD_LENGTH}
             required
@@ -160,9 +158,8 @@ export default function ResetPassword() {
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="senha-confirma">Repetir a nova senha</Label>
-          <Input
+          <PasswordInput
             id="senha-confirma"
-            type={visible ? "text" : "password"}
             autoComplete="new-password"
             minLength={MIN_PASSWORD_LENGTH}
             required
@@ -171,17 +168,7 @@ export default function ResetPassword() {
           />
         </div>
 
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">Pelo menos {MIN_PASSWORD_LENGTH} caracteres.</p>
-          <button
-            type="button"
-            onClick={() => setVisible((v) => !v)}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-          >
-            {visible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-            {visible ? "Ocultar" : "Mostrar"}
-          </button>
-        </div>
+        <p className="text-xs text-muted-foreground">Pelo menos {MIN_PASSWORD_LENGTH} caracteres.</p>
 
         <Button type="submit" className="w-full" disabled={saving}>
           {saving ? <Loader2 className="animate-spin" /> : <KeyRound />}

@@ -19,6 +19,7 @@ import type { WhatsappProvider } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -625,8 +626,7 @@ export default function Settings() {
               </div>
               <div className="space-y-1.5">
                 <Label>Access Token</Label>
-                <Input
-                  type="password"
+                <PasswordInput
                   autoComplete="new-password"
                   value={accessToken}
                   onChange={(e) => setAccessToken(e.target.value)}

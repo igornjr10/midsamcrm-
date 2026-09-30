@@ -114,13 +114,17 @@ export type ConnectionState = "open" | "connecting" | "close" | "unknown";
 
 export async function instanceState(
   target: UazapiTarget,
-): Promise<{ state: ConnectionState; error: string | null }> {
-  const { ok, data, error } = await call<Record<string, any>>(
+): Promise<{ state: ConnectionState; error: string | null; gone: boolean }> {
+  const { ok, status, data, error } = await call<Record<string, any>>(
     target.base,
     "/instance/status",
     { token: target.token },
   );
-  if (!ok || !data) return { state: "unknown", error: error ?? "Falha ao consultar status" };
+  // 401/404: o servidor não conhece mais esse token — a instância foi apagada
+  // (o servidor gratuito apaga tudo em 1h) ou o servidor foi trocado.
+  if (!ok || !data) {
+    return { state: "unknown", error: error ?? "Falha ao consultar status", gone: status === 401 || status === 404 };
+  }
 
   // O vocabulário da UAZAPI é connected/connecting/disconnected; o resto do CRM
   // fala open/connecting/close, herdado do Evolution.
@@ -130,7 +134,7 @@ export async function instanceState(
     raw === "connecting" ? "connecting" :
     raw === "disconnected" ? "close" :
     "unknown";
-  return { state, error: null };
+  return { state, error: null, gone: false };
 }
 
 /**
@@ -369,8 +373,13 @@ export function normalizeWebhook(payload: Record<string, any>): NormalizedValue 
     // Grupo não vira conversa do CRM.
     if (m.isGroup || String(m.chatid ?? "").endsWith("@g.us")) continue;
 
-    // sender_pn é o telefone de verdade; `sender` costuma ser um @lid.
-    const phone = jidToPhone(m.sender_pn) ?? jidToPhone(m.chatid);
+    // Recebida: sender_pn é o telefone de verdade do lead (`sender` costuma ser
+    // um @lid). Enviada: o remetente é o próprio número da empresa, e o lead é a
+    // conversa (chatid). Ler sender_pn primeiro aqui jogava tudo o que a empresa
+    // mandou num contato com o número dela mesma.
+    const phone = m.fromMe
+      ? jidToPhone(m.chatid) ?? null
+      : jidToPhone(m.sender_pn) ?? jidToPhone(m.chatid);
     if (!phone) continue;
 
     const kind = messageKind(m.messageType ?? "");

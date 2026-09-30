@@ -8,7 +8,7 @@ import FollowupHistory from "@/components/sdr/FollowupHistory";
 import RelationshipSettings from "@/components/sdr/RelationshipSettings";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -232,8 +232,7 @@ export default function SdrIa() {
                     </div>
                     <div className="space-y-1.5">
                       <Label>Chave da OpenAI</Label>
-                      <Input
-                        type="password"
+                      <PasswordInput
                         placeholder={config?.has_openai_api_key ? "•••••••• (chave salva; deixe em branco para manter)" : "sk-..."}
                         value={apiKey}
                         onChange={(e) => setApiKey(e.target.value)}

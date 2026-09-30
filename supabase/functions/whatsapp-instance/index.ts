@@ -216,7 +216,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Instância utilizável = existe, é do provedor pedido e tem token.
-    const ready =
+    let ready =
       !!config && config.provider === provider && !!config.instance_token && !!config.instance_name;
 
     const base = config?.api_base_url || serverBase;
@@ -224,6 +224,16 @@ Deno.serve(async (req: Request) => {
       base, apikey: config!.instance_token!, instance: config!.instance_name!,
     });
     const uazTarget = (): uaz.UazapiTarget => ({ base, token: config!.instance_token! });
+
+    // UAZAPI: o token guardado pode ter morrido do outro lado — o servidor
+    // gratuito apaga a instância em 1h. Sem conferir, o Conectar pedia QR a um
+    // token morto e a tela só mostrava "Invalid token". Token recusado vira
+    // "sem instância": o status mostra desconectado e o Conectar cria outra no
+    // servidor atual. Instância viva em outro servidor continua valendo.
+    if (ready && provider === "uazapi") {
+      const { gone } = await uaz.instanceState(uazTarget());
+      if (gone) ready = false;
+    }
 
     const readState = async () =>
       provider === "uazapi" ? await uaz.instanceState(uazTarget()) : await evo.instanceState(evoTarget());

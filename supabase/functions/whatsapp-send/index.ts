@@ -95,7 +95,9 @@ Deno.serve(async (req: Request) => {
       metadata: Record<string, unknown>,
     ) => {
       if (!contactId) return;
-      await supabaseAdmin.from("conversations").insert({
+      // Falha aqui some com a mensagem do chat sem aviso — o eco do webhook pode
+      // ter gravado o mesmo id antes (duplicata, inofensivo) ou algo pior.
+      const { error } = await supabaseAdmin.from("conversations").insert({
         user_id: user.id,
         company_id: companyId,
         contact_id: contactId,
@@ -105,6 +107,7 @@ Deno.serve(async (req: Request) => {
         message_ref: wamid,
         metadata: { ...metadata, deliveryStatus: "sent" },
       });
+      if (error && error.code !== "23505") console.log("whatsapp-send: falha ao gravar enviada", error.message);
     };
 
     // Cobra a cota antes de enviar, em qualquer provedor. Depois do envio a
