@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Eye, EyeOff, KeyRound, Loader2 } from "lucide-react";
+import { KeyRound, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MIN_PASSWORD_LENGTH, validateNewPassword } from "@/lib/password";
@@ -22,7 +22,6 @@ export default function ChangePasswordCard() {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [visible, setVisible] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -50,7 +49,6 @@ export default function ChangePasswordCard() {
     setCurrent("");
     setNext("");
     setConfirm("");
-    setVisible(false);
     toast.success("Senha alterada. Use a nova no próximo login.");
   };
 
@@ -70,9 +68,8 @@ export default function ChangePasswordCard() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="senha-atual">Senha atual</Label>
-            <Input
+            <PasswordInput
               id="senha-atual"
-              type={visible ? "text" : "password"}
               autoComplete="current-password"
               required
               value={current}
@@ -83,9 +80,8 @@ export default function ChangePasswordCard() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="senha-nova">Nova senha</Label>
-              <Input
+              <PasswordInput
                 id="senha-nova"
-                type={visible ? "text" : "password"}
                 autoComplete="new-password"
                 minLength={MIN_PASSWORD_LENGTH}
                 required
@@ -95,9 +91,8 @@ export default function ChangePasswordCard() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="senha-confirma">Repetir a nova senha</Label>
-              <Input
+              <PasswordInput
                 id="senha-confirma"
-                type={visible ? "text" : "password"}
                 autoComplete="new-password"
                 minLength={MIN_PASSWORD_LENGTH}
                 required
@@ -113,10 +108,6 @@ export default function ChangePasswordCard() {
             <Button type="submit" disabled={saving}>
               {saving ? <Loader2 className="animate-spin" /> : <KeyRound />}
               {saving ? "Salvando..." : "Alterar senha"}
-            </Button>
-            <Button type="button" variant="outline" onClick={() => setVisible((v) => !v)}>
-              {visible ? <EyeOff /> : <Eye />}
-              {visible ? "Ocultar" : "Mostrar"}
             </Button>
           </div>
         </form>
