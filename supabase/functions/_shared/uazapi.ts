@@ -184,7 +184,13 @@ function toNumber(phone: string): string {
 
 /** O id da mensagem enviada aparece com nomes diferentes conforme a rota. */
 function sentId(data: Record<string, any> | null): string | null {
-  return data?.messageid ?? data?.id ?? data?.key?.id ?? data?.message?.id ?? null;
+  if (data?.messageid) return String(data.messageid);
+  // O `id` vem como "<dono>:<messageid>". Os recibos e o eco citam só o
+  // messageid — gravado com o prefixo, o ✓✓ nunca acharia a mensagem.
+  const raw = data?.id ?? data?.key?.id ?? data?.message?.id ?? null;
+  if (!raw) return null;
+  const id = String(raw);
+  return id.includes(":") ? id.slice(id.lastIndexOf(":") + 1) : id;
 }
 
 export async function sendText(
@@ -362,9 +368,36 @@ export type NormalizedValue = {
   contacts: Array<{ wa_id: string; profile?: { name?: string } }>;
 };
 
+/**
+ * Confirmação de entrega/leitura (evento messages_update) -> statuses da Meta.
+ *
+ * Formato (docs.uazapi.com/reference/webhooks/messages_update): o estado vem
+ * em `state` e em `event.Type` ("Read", "Delivered", "Played") e os ids em
+ * `event.MessageIDs` — os mesmos `messageid` do evento de mensagem.
+ */
+function collectReceipts(payload: Record<string, any>): Array<{ id: string; status: string }> {
+  const event = payload.event;
+  if (!event || typeof event !== "object" || !Array.isArray(event.MessageIDs)) return [];
+  // Só o que a empresa mandou: recibo de mensagem do lead não muda nada aqui.
+  if (event.IsFromMe === false || event.IsGroup === true) return [];
+
+  const raw = String(payload.state ?? event.Type ?? "").toLowerCase();
+  const status =
+    raw.includes("read") || raw.includes("play") ? "read" :
+    raw.includes("deliver") ? "delivered" :
+    null;
+  if (!status) return [];
+
+  return (event.MessageIDs as unknown[])
+    .map((id) => String(id ?? "").trim())
+    .filter(Boolean)
+    .map((id) => ({ id, status }));
+}
+
 /** Evento da UAZAPI -> o mesmo `value` que a Meta manda. */
 export function normalizeWebhook(payload: Record<string, any>): NormalizedValue {
   const value: NormalizedValue = { messages: [], message_echoes: [], statuses: [], contacts: [] };
+  value.statuses.push(...collectReceipts(payload));
 
   for (const m of collectMessages(payload)) {
     const id = String(m.messageid ?? "");

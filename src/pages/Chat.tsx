@@ -55,6 +55,22 @@ function timeLabel(iso: string): string {
   return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
 }
 
+// Dentro do balão: sempre a hora, e a data junto quando não é de hoje.
+function bubbleTime(iso: string): string {
+  const date = new Date(iso);
+  const time = date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  if (date.toDateString() === new Date().toDateString()) return time;
+  return `${date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} ${time}`;
+}
+
+/** ✓ enviada, ✓✓ entregue, ✓✓ azul lida — como no WhatsApp. */
+function DeliveryTicks({ status, readClassName = "text-sky-500" }: { status: unknown; readClassName?: string }) {
+  if (status === "failed") return <span className="text-[10px] font-semibold text-destructive">falhou</span>;
+  if (status === "read") return <CheckCheck className={cn("h-3.5 w-3.5 shrink-0", readClassName)} aria-label="Lida" />;
+  if (status === "delivered") return <CheckCheck className="h-3.5 w-3.5 shrink-0" aria-label="Entregue" />;
+  return <Check className="h-3.5 w-3.5 shrink-0" aria-label="Enviada" />;
+}
+
 // Mídia sem legenda chega como rótulo ("[Vídeo]"). Na lista vira ícone + nome,
 // que se lê num relance, em vez do texto entre colchetes.
 const MEDIA_PREVIEW: Record<string, { icon: LucideIcon; label: string }> = {
@@ -70,19 +86,11 @@ function LastMessagePreview({ message }: { message: Conversation | undefined }) 
 
   const content = (message.content ?? "").trim();
   const media = MEDIA_PREVIEW[content];
-  const status = message.metadata?.deliveryStatus as string | undefined;
 
   return (
     <>
       {message.sender === "ai" && <Bot className="h-3.5 w-3.5 shrink-0" aria-label="Resposta da IA" />}
-      {message.sender === "user" &&
-        (status === "read" ? (
-          <CheckCheck className="h-3.5 w-3.5 shrink-0 text-sky-500" aria-label="Lida" />
-        ) : status === "delivered" ? (
-          <CheckCheck className="h-3.5 w-3.5 shrink-0" aria-label="Entregue" />
-        ) : (
-          <Check className="h-3.5 w-3.5 shrink-0" aria-label="Enviada" />
-        ))}
+      {message.sender === "user" && <DeliveryTicks status={message.metadata?.deliveryStatus} />}
       {media && <media.icon className="h-3.5 w-3.5 shrink-0" />}
       <span className="truncate">{media ? media.label : content || "Mensagem"}</span>
     </>
@@ -708,8 +716,13 @@ export default function Chat() {
                           </p>
                         )}
                         <p className="whitespace-pre-wrap break-words leading-relaxed">{m.content}</p>
-                        <p className="tabular mt-1 text-right text-[10px] opacity-70">
-                          {timeLabel(m.created_at)}
+                        <p className="tabular mt-1 flex items-center justify-end gap-1 text-[10px]">
+                          <span className="opacity-70">{bubbleTime(m.created_at)}</span>
+                          {isOutgoing && (
+                            <span className="opacity-90">
+                              <DeliveryTicks status={m.metadata?.deliveryStatus} readClassName="text-sky-300" />
+                            </span>
+                          )}
                         </p>
                       </div>
                     </div>
