@@ -76,7 +76,7 @@ const STATE_LABEL: Record<InstanceState, string> = {
 };
 
 export default function Settings() {
-  const { user, company } = useAuth();
+  const { user, company, isCompanyAdmin } = useAuth();
   const { data: config, isPending } = useWhatsappConfigQuery(company?.id);
   const saveConfig = useSaveWhatsappConfigMutation();
   const queryClient = useQueryClient();
@@ -428,6 +428,17 @@ export default function Settings() {
   const qrSrc = qr && (qr.startsWith("data:") ? qr : `data:image/png;base64,${qr}`);
 
   const connected = instanceState === "open";
+
+  // Vendedor: WhatsApp, integrações e automações são do admin. Aqui ele só
+  // troca a própria senha — sem esta tela não teria onde fazer isso.
+  if (!isCompanyAdmin) {
+    return (
+      <div className="max-w-2xl">
+        <PageHeader icon={SettingsIcon} title="Configurações" description="Sua conta" />
+        <ChangePasswordCard />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl">

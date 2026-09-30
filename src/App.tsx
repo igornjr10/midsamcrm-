@@ -26,6 +26,7 @@ import Bonus from "@/pages/Bonus";
 import Segmentos from "@/pages/Segmentos";
 import Vendedor from "@/pages/Vendedor";
 import Captacao from "@/pages/Captacao";
+import Equipe from "@/pages/Equipe";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -86,6 +87,7 @@ export default function App() {
                   <Route path="/biblioteca" element={<Biblioteca />} />
                   <Route path="/sdr" element={<SdrIa />} />
                   <Route path="/empresas" element={<Companies />} />
+                  <Route path="/equipe" element={<Equipe />} />
                   <Route path="/configuracoes" element={<Settings />} />
                 </Route>
               </Routes>
