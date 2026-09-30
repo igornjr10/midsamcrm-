@@ -482,6 +482,21 @@ async function existingRefs(
   return new Set(((data ?? []) as Array<{ message_ref: string }>).map((r) => r.message_ref));
 }
 
+// Contato que nasceu de mensagem enviada (ou de importação sem nome) fica com o
+// telefone no lugar do nome. Quando o lead fala e o perfil dele traz um nome,
+// trocamos — mas só se o nome atual for número: o que a equipe digitou fica.
+async function fillContactName(supabase: Db, contactId: string, displayName: string | null): Promise<void> {
+  const name = displayName?.trim();
+  if (!name || /^[\d\s()+.-]*$/.test(name)) return;
+
+  const { error } = await supabase
+    .from("contacts")
+    .update({ name })
+    .eq("id", contactId)
+    .filter("name", "match", "^[0-9 ()+.-]*$");
+  if (error) console.error("fillContactName: update falhou", error.message);
+}
+
 async function findOrCreateContact(
   supabase: Db,
   config: WhatsappConfig,
@@ -493,7 +508,10 @@ async function findOrCreateContact(
     p_phone: phone,
   });
   const found = (existing as Array<{ id: string; ai_paused: boolean }> | null)?.[0];
-  if (found?.id) return { id: found.id, ai_paused: found.ai_paused ?? false };
+  if (found?.id) {
+    await fillContactName(supabase, found.id, displayName);
+    return { id: found.id, ai_paused: found.ai_paused ?? false };
+  }
 
   const { data: created, error } = await supabase
     .from("contacts")
