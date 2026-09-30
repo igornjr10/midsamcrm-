@@ -20,6 +20,11 @@ interface AuthContextValue {
   /** Todas as empresas em que o usuário é membro. */
   memberships: CompanyInfo[];
   isSuperAdmin: boolean;
+  /**
+   * Admin da empresa ativa (ou super admin): vê Configurações e Equipe. O
+   * Vendedor (role "member") usa o CRM, mas não mexe nessas duas telas.
+   */
+  isCompanyAdmin: boolean;
   /** true quando a empresa ativa não é uma membership do usuário. */
   isImpersonating: boolean;
   loading: boolean;
@@ -68,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const ownCompany = memberships[0] ?? null;
   const company = activeCompany ?? ownCompany;
   const isImpersonating = !!company && !memberships.some((m) => m.id === company.id);
+  const isCompanyAdmin = isSuperAdmin || company?.role === "admin" || company?.role === "super_admin";
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
@@ -235,6 +241,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ownCompany,
         memberships,
         isSuperAdmin,
+        isCompanyAdmin,
         isImpersonating,
         loading,
         enterCompany,

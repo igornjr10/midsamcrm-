@@ -4,7 +4,7 @@ import {
   Kanban, Users, MessageSquare, CalendarDays, Settings, LogOut, Loader2, Bot, Library,
   Building2, Megaphone, Moon, Sun, Eye, Menu, X, ShoppingBag, LifeBuoy,
   LayoutDashboard, Receipt, ClipboardCheck, Filter, Gift, MousePointerClick,
-  PanelLeftClose, PanelLeftOpen,
+  PanelLeftClose, PanelLeftOpen, UsersRound,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -45,9 +45,16 @@ const NAV_GROUPS = [
   },
   {
     label: "Sistema",
-    items: [{ to: "/configuracoes", label: "Configurações", icon: Settings }],
+    items: [
+      { to: "/equipe", label: "Equipe", icon: UsersRound },
+      { to: "/configuracoes", label: "Configurações", icon: Settings },
+    ],
   },
 ];
+
+// Telas só do admin da empresa. O Vendedor não vê no menu e, se digitar a URL,
+// volta para o início — quem recusa de verdade é a edge function company-team.
+const ADMIN_ONLY_ROUTES = new Set(["/equipe"]);
 
 const SUPER_ADMIN_GROUP = {
   label: "Administração",
@@ -77,8 +84,9 @@ function readCollapsed(): boolean {
 }
 
 export default function AppLayout() {
-  const { user, company, ownCompany, isSuperAdmin, isImpersonating, loading, leaveCompany, signOut } =
-    useAuth();
+  const {
+    user, company, ownCompany, isSuperAdmin, isCompanyAdmin, isImpersonating, loading, leaveCompany, signOut,
+  } = useAuth();
   const { resolved, toggleTheme } = useTheme();
 
   // No mobile a navegação é uma gaveta sobre o conteúdo; a partir de lg ela
@@ -119,7 +127,9 @@ export default function AppLayout() {
   const { count: unreadCount } = useUnreadContacts(company?.id, user?.id);
   // Módulos do pacote desta empresa. Esconder o item é UX — quem recusa de
   // verdade é a RLS e as edge functions; digitar a URL não pode dar acesso.
-  const { routeEnabled } = useFeatures(company?.id);
+  const { routeEnabled: moduleEnabled } = useFeatures(company?.id);
+  const routeEnabled = (route: string) =>
+    moduleEnabled(route) && (isCompanyAdmin || !ADMIN_ONLY_ROUTES.has(route));
 
   const groups = (isSuperAdmin ? [...NAV_GROUPS, SUPER_ADMIN_GROUP] : NAV_GROUPS)
     // Grupo sem nenhum item liberado não vira um título solto no menu.

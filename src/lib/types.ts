@@ -665,6 +665,14 @@ export interface CompanyTeamMember {
   role: string;
 }
 
+/** Papel na empresa. "member" aparece na tela como Vendedor. */
+export type TeamRole = "admin" | "member";
+
+export const TEAM_ROLE_LABEL: Record<TeamRole, string> = {
+  admin: "Admin",
+  member: "Vendedor",
+};
+
 /** Nome curto de um atendente: o que cabe num seletor de 1 linha. */
 export function teamLabel(member: CompanyTeamMember): string {
   return member.full_name?.trim() || member.email.split("@")[0];
