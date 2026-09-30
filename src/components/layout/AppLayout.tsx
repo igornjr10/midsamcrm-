@@ -12,6 +12,7 @@ import {
 } from "@/hooks/queries";
 import { useTheme } from "@/hooks/useTheme";
 import { Logo, LogoMark } from "@/components/layout/Logo";
+import Landing from "@/pages/Landing";
 import { EmptyState } from "@/components/ui/empty-state";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -133,7 +134,9 @@ export default function AppLayout() {
     );
   }
 
-  if (!user) return <Navigate to="/login" replace />;
+  // Visitante no endereço principal vê a apresentação do produto; em qualquer
+  // outra tela do CRM, sem login, continua indo direto para o login.
+  if (!user) return pathname === "/" ? <Landing /> : <Navigate to="/login" replace />;
 
   const initials = (company?.name ?? user.email ?? "?").trim().charAt(0).toUpperCase();
 
