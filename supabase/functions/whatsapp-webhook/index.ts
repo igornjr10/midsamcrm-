@@ -167,6 +167,12 @@ async function updateDeliveryStatus(
       ? data.metadata as Record<string, unknown>
       : {};
 
+  // Os avisos podem chegar fora de ordem (o "entregue" depois do "lido"):
+  // status só avança. Falha vale sempre — é informação nova, não regressão.
+  const rank: Record<string, number> = { sent: 0, delivered: 1, read: 2 };
+  const current = String(currentMetadata.deliveryStatus ?? "");
+  if (normalized !== "failed" && (rank[current] ?? -1) >= rank[normalized]) return;
+
   await supabase
     .from("conversations")
     .update({
@@ -2270,7 +2276,7 @@ Deno.serve(async (req: Request) => {
       }
 
       const value = uaz.normalizeWebhook(payload);
-      if (value.messages.length === 0 && value.message_echoes.length === 0) {
+      if (value.messages.length === 0 && value.message_echoes.length === 0 && value.statuses.length === 0) {
         // Evento de conexão, status, ou envelope diferente do esperado. Fica o
         // registro para o caso de ser mensagem que não soubemos ler.
         console.log(
