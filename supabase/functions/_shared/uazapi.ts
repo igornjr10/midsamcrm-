@@ -373,8 +373,13 @@ export function normalizeWebhook(payload: Record<string, any>): NormalizedValue 
     // Grupo não vira conversa do CRM.
     if (m.isGroup || String(m.chatid ?? "").endsWith("@g.us")) continue;
 
-    // sender_pn é o telefone de verdade; `sender` costuma ser um @lid.
-    const phone = jidToPhone(m.sender_pn) ?? jidToPhone(m.chatid);
+    // Recebida: sender_pn é o telefone de verdade do lead (`sender` costuma ser
+    // um @lid). Enviada: o remetente é o próprio número da empresa, e o lead é a
+    // conversa (chatid). Ler sender_pn primeiro aqui jogava tudo o que a empresa
+    // mandou num contato com o número dela mesma.
+    const phone = m.fromMe
+      ? jidToPhone(m.chatid) ?? null
+      : jidToPhone(m.sender_pn) ?? jidToPhone(m.chatid);
     if (!phone) continue;
 
     const kind = messageKind(m.messageType ?? "");
