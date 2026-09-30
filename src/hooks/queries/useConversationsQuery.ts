@@ -62,6 +62,20 @@ export function useConversationsQuery(companyId: string | undefined, contactId: 
           void queryClient.invalidateQueries({ queryKey: lastMessagesQueryKey(companyId) });
         },
       )
+      // Entrega e leitura chegam depois, como UPDATE no metadata: é o que faz o
+      // ✓ virar ✓✓ com a conversa aberta.
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "conversations", filter: `contact_id=eq.${contactId}` },
+        (payload) => {
+          const message = payload.new as Conversation;
+          queryClient.setQueryData<Conversation[]>(
+            conversationsQueryKey(companyId, contactId),
+            (prev) => prev?.map((m) => (m.id === message.id ? { ...m, ...message } : m)),
+          );
+          void queryClient.invalidateQueries({ queryKey: lastMessagesQueryKey(companyId) });
+        },
+      )
       .subscribe();
 
     return () => {
