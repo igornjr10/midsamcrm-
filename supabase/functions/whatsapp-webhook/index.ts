@@ -15,6 +15,7 @@ import * as uaz from "../_shared/uazapi.ts";
 import * as owa from "../_shared/openwa.ts";
 import { hasFeature } from "../_shared/features.ts";
 import { consumeCoins } from "../_shared/usage.ts";
+import { toWhatsappFormat } from "../_shared/whatsapp-format.ts";
 
 // Cliente com service role. Sem os genéricos explícitos o ReturnType resolve
 // para os defaults (never) e não aceita o cliente real.
@@ -1705,7 +1706,7 @@ async function maybeAiReply(
         } else {
           const item = await loadLibraryItem(supabase, config.company_id, asset.id);
           if (item) {
-            const caption = args.mensagem?.trim() || item.title;
+            const caption = args.mensagem?.trim() ? toWhatsappFormat(args.mensagem.trim()) : item.title;
             const wamid = await sendWhatsappMedia(config, fromPhone, item, caption);
             if (wamid) {
               await logAiMessage(caption, wamid, {
@@ -1720,7 +1721,7 @@ async function maybeAiReply(
         }
       }
 
-      const reply = choice.content?.trim();
+      const reply = choice.content?.trim() ? toWhatsappFormat(choice.content.trim()) : "";
       if (!reply) return;
 
       const wamid = await sendWhatsappText(config, fromPhone, reply);

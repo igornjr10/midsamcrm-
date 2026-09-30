@@ -39,6 +39,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { renderWhatsappText, stripWhatsappFormat } from "@/lib/whatsappText";
 
 // Como o WhatsApp: hora se foi hoje, "Ontem", dia da semana até 6 dias atrás
 // e, dali para trás, a data.
@@ -92,7 +93,7 @@ function LastMessagePreview({ message }: { message: Conversation | undefined }) 
       {message.sender === "ai" && <Bot className="h-3.5 w-3.5 shrink-0" aria-label="Resposta da IA" />}
       {message.sender === "user" && <DeliveryTicks status={message.metadata?.deliveryStatus} />}
       {media && <media.icon className="h-3.5 w-3.5 shrink-0" />}
-      <span className="truncate">{media ? media.label : content || "Mensagem"}</span>
+      <span className="truncate">{media ? media.label : stripWhatsappFormat(content) || "Mensagem"}</span>
     </>
   );
 }
@@ -719,7 +720,7 @@ export default function Chat() {
                             Áudio transcrito
                           </p>
                         )}
-                        <p className="whitespace-pre-wrap break-words leading-relaxed">{m.content}</p>
+                        <p className="whitespace-pre-wrap break-words leading-relaxed">{renderWhatsappText(m.content ?? "")}</p>
                         <p className="tabular mt-1 flex items-center justify-end gap-1 text-[10px]">
                           <span className="opacity-70">{bubbleTime(m.created_at)}</span>
                           {isOutgoing && (
