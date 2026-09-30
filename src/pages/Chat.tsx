@@ -527,7 +527,7 @@ export default function Chat() {
                           getStageTone(stages, selectedContact.stage).badge,
                         )}
                       >
-                        <span className="flex items-center gap-1.5">
+                        <span className="!flex items-center gap-1.5 whitespace-nowrap">
                           <span
                             className={cn(
                               "h-1.5 w-1.5 shrink-0 rounded-full",
@@ -565,7 +565,9 @@ export default function Chat() {
                             : "border-dashed text-muted-foreground",
                         )}
                       >
-                        <span className="flex items-center gap-1.5">
+                        {/* !flex: o SelectTrigger põe line-clamp no span filho,
+                            que vira bloco e empilha o ícone sobre o texto. */}
+                        <span className="!flex items-center gap-1.5 whitespace-nowrap">
                           <UserRound className="h-3 w-3 shrink-0" />
                           {assignedMember
                             ? assignedMember.user_id === user?.id
@@ -672,7 +674,9 @@ export default function Chat() {
                 </span>
               </div>
             ) : null}
-            <ScrollArea className="flex-1 bg-muted/30 p-4">
+            {/* Rolagem nativa, pelo mesmo motivo da lista: dentro do ScrollArea
+                o max-w do balão não segura, e texto longo vazava cortado. */}
+            <div className="scrollbar-slim min-h-0 flex-1 overflow-y-auto bg-muted/30 p-4">
               <div className="flex min-h-full flex-col justify-end gap-1.5">
                 {messages.map((m) => {
                   const isOutgoing = m.sender === "user" || m.sender === "ai";
@@ -733,7 +737,7 @@ export default function Chat() {
                 )}
                 <div ref={scrollRef} />
               </div>
-            </ScrollArea>
+            </div>
             <div className="flex items-center gap-2 border-t p-3">
               <input
                 ref={attachInput}
