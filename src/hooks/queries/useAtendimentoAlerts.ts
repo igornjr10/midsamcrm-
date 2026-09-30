@@ -55,6 +55,20 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
  */
 let audioContext: AudioContext | null = null;
 
+/**
+ * Destrava o áudio no primeiro clique ou tecla. Criado só na hora do aviso, o
+ * contexto nascia suspenso — o evento do realtime não conta como interação — e
+ * o bipe não saía até a pessoa mexer na página.
+ */
+function unlockAudio(): void {
+  try {
+    audioContext ??= new AudioContext();
+    if (audioContext.state === "suspended") void audioContext.resume();
+  } catch {
+    /* navegador sem Web Audio: título e notificação seguem valendo */
+  }
+}
+
 function playAlertSound(): void {
   if (!isAlertSoundEnabled()) return;
   try {
@@ -119,6 +133,10 @@ export function useAtendimentoAlerts(companyId: string | undefined): void {
     };
     document.addEventListener("visibilitychange", onVisible);
 
+    const unlockOptions = { once: true, capture: true } as const;
+    window.addEventListener("pointerdown", unlockAudio, unlockOptions);
+    window.addEventListener("keydown", unlockAudio, unlockOptions);
+
     const channel = supabase
       .channel(`atendimento-${companyId}`)
       .on(
@@ -172,6 +190,8 @@ export function useAtendimentoAlerts(companyId: string | undefined): void {
 
     return () => {
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pointerdown", unlockAudio, true);
+      window.removeEventListener("keydown", unlockAudio, true);
       void supabase.removeChannel(channel);
     };
   }, [companyId, queryClient]);
