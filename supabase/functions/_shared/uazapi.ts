@@ -114,13 +114,17 @@ export type ConnectionState = "open" | "connecting" | "close" | "unknown";
 
 export async function instanceState(
   target: UazapiTarget,
-): Promise<{ state: ConnectionState; error: string | null }> {
-  const { ok, data, error } = await call<Record<string, any>>(
+): Promise<{ state: ConnectionState; error: string | null; gone: boolean }> {
+  const { ok, status, data, error } = await call<Record<string, any>>(
     target.base,
     "/instance/status",
     { token: target.token },
   );
-  if (!ok || !data) return { state: "unknown", error: error ?? "Falha ao consultar status" };
+  // 401/404: o servidor não conhece mais esse token — a instância foi apagada
+  // (o servidor gratuito apaga tudo em 1h) ou o servidor foi trocado.
+  if (!ok || !data) {
+    return { state: "unknown", error: error ?? "Falha ao consultar status", gone: status === 401 || status === 404 };
+  }
 
   // O vocabulário da UAZAPI é connected/connecting/disconnected; o resto do CRM
   // fala open/connecting/close, herdado do Evolution.
@@ -130,7 +134,7 @@ export async function instanceState(
     raw === "connecting" ? "connecting" :
     raw === "disconnected" ? "close" :
     "unknown";
-  return { state, error: null };
+  return { state, error: null, gone: false };
 }
 
 /**
