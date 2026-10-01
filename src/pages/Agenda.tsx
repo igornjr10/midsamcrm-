@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   Ban, CalendarDays, CheckCheck, ChevronLeft, ChevronRight, Clock, MapPin, Plus, RefreshCw,
-  Trash2, User, UserCheck, SlidersHorizontal,
+  Pencil, Trash2, User, UserCheck, SlidersHorizontal,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -66,6 +66,8 @@ export default function Agenda() {
   });
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
   const [createOpen, setCreateOpen] = useState(false);
+  // Compromisso em edição: o mesmo diálogo do "Novo", preenchido com ele.
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [resourcesOpen, setResourcesOpen] = useState(false);
   // "all" ou o id de um recurso: a agenda de uma profissional só.
   const [resourceFilter, setResourceFilter] = useState("all");
@@ -148,7 +150,31 @@ export default function Agenda() {
   });
 
   const openCreate = () => {
+    setEditingId(null);
     setForm((prev) => ({ ...prev, title: "", date: selectedKey, end: "", location: "", description: "" }));
+    setCreateOpen(true);
+  };
+
+  // hh:mm no fuso do navegador, para o <input type="time">.
+  const timeValue = (iso: string) => {
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  };
+
+  const openEdit = (item: Appointment) => {
+    setEditingId(item.id);
+    setForm({
+      title: item.title,
+      kind: item.kind,
+      date: dayKey(new Date(item.starts_at)),
+      start: item.all_day ? "09:00" : timeValue(item.starts_at),
+      end: item.ends_at && !item.all_day ? timeValue(item.ends_at) : "",
+      all_day: item.all_day,
+      contact_id: item.contact_id ?? "none",
+      resource_id: item.resource_id ?? "none",
+      location: item.location ?? "",
+      description: item.description ?? "",
+    });
     setCreateOpen(true);
   };
 
@@ -168,21 +194,29 @@ export default function Agenda() {
       return;
     }
 
+    const fields = {
+      title: form.title.trim(),
+      kind: form.kind,
+      starts_at: startsAt.toISOString(),
+      ends_at: endsAt ? endsAt.toISOString() : null,
+      all_day: form.all_day,
+      location: form.location.trim() || null,
+      description: form.description.trim() || null,
+      contact_id: form.contact_id === "none" ? null : form.contact_id,
+      resource_id: form.resource_id === "none" ? null : form.resource_id,
+    };
+
     try {
-      await createAppointment.mutateAsync({
-        user_id: user.id,
-        company_id: company.id,
-        title: form.title.trim(),
-        kind: form.kind,
-        starts_at: startsAt.toISOString(),
-        ends_at: endsAt ? endsAt.toISOString() : null,
-        all_day: form.all_day,
-        location: form.location.trim() || null,
-        description: form.description.trim() || null,
-        contact_id: form.contact_id === "none" ? null : form.contact_id,
-        resource_id: form.resource_id === "none" ? null : form.resource_id,
-      });
-      toast.success("Compromisso agendado");
+      if (editingId) {
+        // O gatilho do banco põe a alteração na fila do Google: o evento de lá
+        // é atualizado sem nada a mais aqui.
+        await updateAppointment.mutateAsync({ id: editingId, company_id: company.id, ...fields });
+        toast.success("Compromisso atualizado");
+      } else {
+        await createAppointment.mutateAsync({ user_id: user.id, company_id: company.id, ...fields });
+        toast.success("Compromisso agendado");
+      }
+      setEditingId(null);
       setCreateOpen(false);
       setSelectedDay(startOfDay(startsAt));
       setMonthCursor(new Date(startsAt.getFullYear(), startsAt.getMonth(), 1));
@@ -465,6 +499,15 @@ export default function Agenda() {
                         <Button
                           size="icon-sm"
                           variant="ghost"
+                          aria-label="Editar compromisso"
+                          className="text-muted-foreground opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+                          onClick={() => openEdit(item)}
+                        >
+                          <Pencil />
+                        </Button>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
                           aria-label={canceled ? "Reativar compromisso" : "Cancelar compromisso"}
                           className="text-muted-foreground opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
                           onClick={() => patchStatus(item, canceled ? "scheduled" : "canceled")}
@@ -494,11 +537,21 @@ export default function Agenda() {
         </div>
       </div>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open);
+          if (!open) setEditingId(null);
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Novo compromisso</DialogTitle>
-            <DialogDescription>Reuniões, ligações e visitas da equipe.</DialogDescription>
+            <DialogTitle>{editingId ? "Editar compromisso" : "Novo compromisso"}</DialogTitle>
+            <DialogDescription>
+              {editingId
+                ? "As mudanças vão também para o Google Agenda, se estiver conectado."
+                : "Reuniões, ligações e visitas da equipe."}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
@@ -626,8 +679,14 @@ export default function Agenda() {
               />
             </div>
 
-            <Button className="w-full" onClick={handleCreate} disabled={createAppointment.isPending}>
-              {createAppointment.isPending ? "Agendando..." : "Agendar"}
+            <Button
+              className="w-full"
+              onClick={handleCreate}
+              disabled={createAppointment.isPending || updateAppointment.isPending}
+            >
+              {editingId
+                ? updateAppointment.isPending ? "Salvando..." : "Salvar alterações"
+                : createAppointment.isPending ? "Agendando..." : "Agendar"}
             </Button>
           </div>
         </DialogContent>

@@ -69,6 +69,7 @@ export const LEAD_SOURCES: Array<{ key: string; label: string }> = [
   { key: "captacao", label: "Formulário de captação" },
   { key: "prospeccao", label: "Prospecção (empresa chamou)" },
   { key: "manual", label: "Cadastro manual" },
+  { key: "importacao", label: "Importação de lista" },
   { key: "indicacao", label: "Indicação" },
   { key: "instagram", label: "Instagram" },
   { key: "site", label: "Site" },
