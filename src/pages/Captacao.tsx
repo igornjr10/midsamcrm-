@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState } from "@/components/ui/empty-state";
+import TrackedLinksCard from "@/components/captacao/TrackedLinksCard";
 
 const BASE_FIELDS: Array<{ key: string; label: string; locked?: boolean }> = [
   { key: "name", label: "Nome" },
@@ -201,6 +202,11 @@ export default function Captacao() {
           </div>
         </div>
       )}
+
+      {/* Links de WhatsApp com código: valem com ou sem pop-up. */}
+      <div className="mt-6">
+        <TrackedLinksCard />
+      </div>
     </div>
   );
 }
