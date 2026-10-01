@@ -53,7 +53,21 @@ type WhatsappMessage = {
   document?: { id?: string; mime_type?: string; caption?: string; filename?: string };
   audio?: { id?: string; mime_type?: string };
   video?: { id?: string; mime_type?: string; caption?: string };
+  // Clique em anúncio que leva ao WhatsApp (Meta: "Click to WhatsApp").
+  referral?: { source_type?: string; headline?: string; body?: string; source_url?: string };
 };
+
+/** Origem do lead gravada só na criação do contato (contacts.source). */
+type LeadOrigin = { source: string; detail?: string | null };
+
+/** Mensagem recebida: veio de anúncio ou é contato direto pelo WhatsApp. */
+function originFromMessage(msg: WhatsappMessage): LeadOrigin {
+  const ref = msg.referral;
+  if (ref && (ref.source_type === "ad" || ref.headline || ref.source_url)) {
+    return { source: "anuncio", detail: ref.headline?.trim() || ref.body?.trim() || ref.source_url || null };
+  }
+  return { source: "whatsapp" };
+}
 
 type WhatsappStatus = {
   id: string;
@@ -509,6 +523,7 @@ async function findOrCreateContact(
   config: WhatsappConfig,
   phone: string,
   displayName: string | null,
+  origin: LeadOrigin = { source: "whatsapp" },
 ): Promise<{ id: string; ai_paused: boolean } | null> {
   const { data: existing } = await supabase.rpc("find_contact_by_phone", {
     p_company_id: config.company_id,
@@ -528,6 +543,8 @@ async function findOrCreateContact(
       name: displayName?.trim() || phone,
       phone,
       stage: "new",
+      source: origin.source,
+      source_detail: origin.detail?.slice(0, 200) ?? null,
     })
     .select("id, ai_paused")
     .maybeSingle();
@@ -1800,7 +1817,9 @@ async function processChange(
       await extractContent(msg, config, supabase, supabaseUrl, openaiKey);
     if (!content && !mediaUrl) continue;
 
-    const contact = await findOrCreateContact(supabase, config, msg.from, nameByWaId.get(msg.from) ?? null);
+    const contact = await findOrCreateContact(
+      supabase, config, msg.from, nameByWaId.get(msg.from) ?? null, originFromMessage(msg),
+    );
     if (!contact) continue;
 
     await insertMessage(supabase, {
@@ -1847,7 +1866,8 @@ async function processChange(
       await extractContent(echo, config, supabase, supabaseUrl, null);
     if (!content && !mediaUrl) continue;
 
-    const contact = await findOrCreateContact(supabase, config, contactPhone, null);
+    // Contato que nasce de mensagem enviada: a empresa chamou primeiro.
+    const contact = await findOrCreateContact(supabase, config, contactPhone, null, { source: "prospeccao" });
     if (!contact) continue;
 
     await insertMessage(supabase, {

@@ -106,6 +106,7 @@ export default function Contacts() {
         name: form.name.trim(),
         phone: form.phone.trim() || null,
         email: form.email.trim() || null,
+        source: "manual",
       });
       toast.success("Contato criado");
       setCreateOpen(false);

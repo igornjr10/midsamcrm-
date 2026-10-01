@@ -109,7 +109,7 @@ export default function Vendas() {
       const existing = phone ? byPhone.get(phone.slice(-8)) : undefined;
       if (existing) contactId = existing.id;
       else {
-        const created = await createContact.mutateAsync({ user_id: user.id, company_id: company.id, name: form.newName.trim(), phone: phone || null });
+        const created = await createContact.mutateAsync({ user_id: user.id, company_id: company.id, name: form.newName.trim(), phone: phone || null, source: "manual", source_detail: "Cadastrado na venda" });
         contactId = created?.id ?? null;
       }
     }

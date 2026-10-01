@@ -73,6 +73,8 @@ export function useCreateContactMutation() {
       email?: string | null;
       stage?: string;
       notes?: string | null;
+      source?: string | null;
+      source_detail?: string | null;
     }) => {
       const { data, error } = await supabase
         .from("contacts")

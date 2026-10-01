@@ -439,6 +439,20 @@ export function normalizeWebhook(payload: Record<string, any>): NormalizedValue 
           : {}),
     };
 
+    // Lead que chegou por anúncio de clique para o WhatsApp: o WhatsApp anexa o
+    // card do anúncio (externalAdReply) na primeira mensagem. Não está no spec
+    // da uazapi, então é tentativa — sem ele o contato fica como "whatsapp".
+    const ctx = (m.content as any)?.contextInfo ?? (m as any).contextInfo;
+    const ad = ctx?.externalAdReply;
+    if (ad && !m.fromMe) {
+      msg.referral = {
+        source_type: "ad",
+        headline: ad.title ? String(ad.title) : undefined,
+        body: ad.body ? String(ad.body) : undefined,
+        source_url: ad.sourceUrl ? String(ad.sourceUrl) : undefined,
+      };
+    }
+
     if (m.fromMe) {
       value.message_echoes.push({ ...msg, to: phone });
     } else {

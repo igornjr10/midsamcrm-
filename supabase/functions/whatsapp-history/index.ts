@@ -156,6 +156,8 @@ Deno.serve(async (req: Request) => {
             name: displayName,
             phone,
             stage: "new",
+            source: "whatsapp",
+            source_detail: "Importado do histórico",
           })
           .select("id")
           .maybeSingle();
