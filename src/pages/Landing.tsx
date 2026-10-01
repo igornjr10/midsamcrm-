@@ -733,6 +733,12 @@ export default function Landing() {
             <a href={whatsappUrl()} target="_blank" rel="noopener noreferrer" className="hover:text-foreground">
               WhatsApp
             </a>
+            <Link to="/privacidade" className="hover:text-foreground">
+              Privacidade
+            </Link>
+            <Link to="/termos" className="hover:text-foreground">
+              Termos
+            </Link>
             <Link to="/login" className="font-medium text-foreground hover:text-primary">
               Entrar
             </Link>

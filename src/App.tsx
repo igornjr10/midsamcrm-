@@ -27,6 +27,7 @@ import Segmentos from "@/pages/Segmentos";
 import Vendedor from "@/pages/Vendedor";
 import Captacao from "@/pages/Captacao";
 import Equipe from "@/pages/Equipe";
+import { Privacidade, Termos } from "@/pages/Legal";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -68,6 +69,9 @@ export default function App() {
                     de verdade, e o layout mandaria de volta para o login. */}
                 <Route path="/esqueci-senha" element={<ForgotPassword />} />
                 <Route path="/redefinir-senha" element={<ResetPassword />} />
+                {/* Públicas: o Google exige as duas URLs na tela de consentimento. */}
+                <Route path="/privacidade" element={<Privacidade />} />
+                <Route path="/termos" element={<Termos />} />
                 <Route element={<AppLayout />}>
                   <Route path="/" element={<Pipeline />} />
                   <Route path="/contatos" element={<Contacts />} />
