@@ -418,6 +418,87 @@ async function transcribeAudio(
   }
 }
 
+// Bytes -> base64 em pedaços: String.fromCharCode(...bytes) estoura a pilha em
+// arquivo de alguns MB.
+function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
+
+type ReceiptReading = { valor: number | null; descricao: string };
+
+/**
+ * Lê foto ou PDF que o lead mandou e diz se é comprovante de pagamento.
+ *
+ * O comprovante mais comum é o print do Pix sem legenda nenhuma: para o gatilho
+ * de texto isso é "[Imagem]" e o pagamento passava batido. Só conta com
+ * confiança alta — foto de documento, de RG ou do carro não vira venda.
+ */
+async function readPaymentReceipt(
+  mediaUrl: string,
+  mime: string,
+  apiKey: string,
+): Promise<ReceiptReading | null> {
+  const isPdf = mime.includes("pdf");
+  try {
+    let attachment: Record<string, unknown>;
+    if (isPdf) {
+      const file = await fetch(mediaUrl, { signal: AbortSignal.timeout(20_000) });
+      if (!file.ok) return null;
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      // PDF grande não é comprovante; não vale pagar a leitura.
+      if (bytes.length > 5 * 1024 * 1024) return null;
+      attachment = {
+        type: "file",
+        file: { filename: "documento.pdf", file_data: `data:application/pdf;base64,${toBase64(bytes)}` },
+      };
+    } else {
+      attachment = { type: "image_url", image_url: { url: mediaUrl, detail: "low" } };
+    }
+
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        temperature: 0,
+        max_tokens: 120,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content:
+              "Você confere arquivos enviados por clientes no WhatsApp. Responda só JSON: " +
+              '{"comprovante": boolean, "confianca": número de 0 a 1, "valor": número em reais ou null, "descricao": texto curto}. ' +
+              "comprovante = true apenas se for comprovante de pagamento JÁ REALIZADO: Pix, transferência, TED/DOC, " +
+              "depósito, boleto pago ou recibo de cartão aprovado. Boleto a pagar, QR code de cobrança, orçamento, " +
+              "nota fiscal sem pagamento, documento pessoal, comprovante de renda ou residência e fotos comuns = false.",
+          },
+          { role: "user", content: [{ type: "text", text: "Este arquivo é um comprovante de pagamento?" }, attachment] },
+        ],
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!res.ok) {
+      console.error("readPaymentReceipt falhou", res.status, (await res.text().catch(() => "")).slice(0, 300));
+      return null;
+    }
+    const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
+    const parsed = JSON.parse(data.choices?.[0]?.message?.content ?? "{}") as {
+      comprovante?: boolean; confianca?: number; valor?: number | null; descricao?: string;
+    };
+    if (parsed.comprovante !== true || Number(parsed.confianca ?? 0) < 0.8) return null;
+    const valor = typeof parsed.valor === "number" && parsed.valor > 0 ? parsed.valor : null;
+    return { valor, descricao: String(parsed.descricao ?? "").slice(0, 200) };
+  } catch (e) {
+    console.error("readPaymentReceipt: exception", e instanceof Error ? e.message : "unknown");
+    return null;
+  }
+}
+
 // Texto + mídia (já baixada para o bucket) de uma mensagem do webhook.
 // Vale tanto para o que chega do cliente quanto para os echoes do celular.
 async function extractContent(
@@ -1858,6 +1939,31 @@ async function processChange(
         wa_timestamp: msg.timestamp ?? null,
       },
     });
+
+    // Foto ou PDF do lead pode ser o comprovante: lê com IA e, se for, registra
+    // o pagamento pela mesma regra do gatilho de texto (move para Ganho).
+    // Contato já marcado como pago não gasta leitura de novo.
+    const isReceiptCandidate =
+      !!mediaUrl && (mediaType === "image" || (mediaType === "document" && (mimetype ?? "").includes("pdf")));
+    if (isReceiptCandidate && openaiKey) {
+      const { data: paid } = await supabase
+        .from("contacts").select("closing_signal_type").eq("id", contact.id).maybeSingle();
+      if ((paid as { closing_signal_type?: string } | null)?.closing_signal_type !== "pagamento") {
+        const receipt = await readPaymentReceipt(mediaUrl!, mimetype ?? "", openaiKey);
+        if (receipt) {
+          const valor = receipt.valor
+            ? receipt.valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+            : null;
+          const { error: signalError } = await supabase.rpc("register_closing_signal", {
+            p_contact_id: contact.id,
+            p_label: mediaType === "image" ? "Comprovante (foto)" : "Comprovante (PDF)",
+            p_signal_type: "pagamento",
+            p_excerpt: [valor, receipt.descricao].filter(Boolean).join(" · ") || "Comprovante lido pela IA",
+          });
+          if (signalError) console.error("register_closing_signal falhou", signalError.message);
+        }
+      }
+    }
 
     // Resposta de pesquisa: "9" vira nota, não conversa.
     if (content && (await captureNpsScore(supabase, contact.id, content))) continue;
