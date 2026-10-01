@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { BadgeCheck, Download, Layers, Plus, Search, SlidersHorizontal, Tag, Users } from "lucide-react";
+import { BadgeCheck, Download, FileUp, Layers, Plus, Search, SlidersHorizontal, Tag, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -18,6 +18,7 @@ import ContactDetailModal from "@/components/contacts/ContactDetailModal";
 import ContactFieldsDialog from "@/components/contacts/ContactFieldsDialog";
 import TagsDialog from "@/components/contacts/TagsDialog";
 import RecordTypesDialog from "@/components/contacts/RecordTypesDialog";
+import ImportContactsDialog from "@/components/contacts/ImportContactsDialog";
 import RecordsTable from "@/components/contacts/RecordsTable";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TagBadge } from "@/components/contacts/TagPicker";
@@ -53,6 +54,7 @@ export default function Contacts() {
   const [smartFilter, setSmartFilter] = useState<ContactFilter>("all");
   const [selected, setSelected] = useState<Contact | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [fieldsOpen, setFieldsOpen] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
   const [recordTypesOpen, setRecordTypesOpen] = useState(false);
@@ -128,6 +130,10 @@ export default function Contacts() {
         }
         actions={
           <>
+            <Button variant="outline" onClick={() => setImportOpen(true)} title="Importar planilha">
+              <FileUp />
+              Importar
+            </Button>
             <Button variant="outline" onClick={exportCsv} title="Exportar planilha">
               <Download />
               Exportar
@@ -369,6 +375,7 @@ export default function Contacts() {
 
       <ContactFieldsDialog open={fieldsOpen} onOpenChange={setFieldsOpen} />
       <RecordTypesDialog open={recordTypesOpen} onOpenChange={setRecordTypesOpen} />
+      <ImportContactsDialog open={importOpen} onOpenChange={setImportOpen} />
       <TagsDialog open={tagsOpen} onOpenChange={setTagsOpen} />
       <ContactDetailModal contact={selected} open={!!selected} onClose={() => setSelected(null)} />
     </div>
