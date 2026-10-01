@@ -329,14 +329,14 @@ export default function Chat() {
   };
 
   return (
-    // Desconta o padding vertical do <main> (p-4 = 2rem, sm:p-6 = 3rem,
-    // lg:p-8 = 4rem) e, abaixo de lg, também a barra superior do mobile (3.5rem).
-    <div className="flex h-[calc(100vh-5.5rem)] gap-4 sm:h-[calc(100vh-6.5rem)] lg:h-[calc(100vh-4rem)]">
+    // Altura vem do AppLayout (fullBleed): o Chat preenche o que sobra abaixo da
+    // barra do mobile e do aviso de conta de cliente, sem conta de padding.
+    <div className="flex h-full">
       {/* Lista de conversas. No mobile ocupa a tela inteira e dá lugar à
           conversa quando um contato é aberto — as duas não cabem lado a lado. */}
       <div
         className={cn(
-          "flex w-full flex-shrink-0 flex-col overflow-hidden rounded-xl border bg-card shadow-card lg:w-80",
+          "flex w-full flex-shrink-0 flex-col overflow-hidden bg-card lg:w-80 lg:border-r",
           selectedContact && "hidden lg:flex",
         )}
       >
@@ -492,7 +492,7 @@ export default function Chat() {
       {/* Thread */}
       <div
         className={cn(
-          "flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-card",
+          "flex min-w-0 flex-1 flex-col overflow-hidden bg-card",
           // Sem contato aberto, quem manda no mobile é a lista.
           !selectedContact && "hidden lg:flex",
         )}

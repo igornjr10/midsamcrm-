@@ -114,7 +114,7 @@ export default function ContactPanel({ contact }: { contact: Contact }) {
   };
 
   return (
-    <div className="hidden w-80 flex-shrink-0 flex-col overflow-hidden rounded-xl border bg-card shadow-card xl:flex">
+    <div className="hidden w-80 flex-shrink-0 flex-col overflow-hidden border-l bg-card xl:flex">
       <ScrollArea className="flex-1">
         <div className="space-y-4 p-4">
           {/* ── Fechamento e pagamento ─────────────────────────────────────── */}

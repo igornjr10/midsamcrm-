@@ -149,6 +149,9 @@ export default function AppLayout() {
   if (!user) return pathname === "/" ? <Landing /> : <Navigate to="/login" replace />;
 
   const initials = (company?.name ?? user.email ?? "?").trim().charAt(0).toUpperCase();
+  // O Chat ocupa a tela inteira, como um app de mensagens: sem a margem e a
+  // largura máxima das outras telas, que ali só sobravam como faixa vazia.
+  const fullBleed = pathname === "/chat" && !!company;
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -325,9 +328,14 @@ export default function AppLayout() {
         </div>
       </aside>
 
-      <main className="scrollbar-slim min-w-0 flex-1 overflow-auto">
+      <main
+        className={cn(
+          "scrollbar-slim min-w-0 flex-1 overflow-auto",
+          fullBleed && "flex h-screen flex-col overflow-hidden",
+        )}
+      >
         {/* Barra do mobile: sem ela não há como abrir a navegação. */}
-        <div className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-border/70 bg-background/80 px-4 backdrop-blur-md lg:hidden">
+        <div className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b border-border/70 bg-background/80 px-4 backdrop-blur-md lg:hidden">
           <button
             onClick={() => setNavOpen(true)}
             aria-label="Abrir menu"
@@ -357,7 +365,12 @@ export default function AppLayout() {
             </button>
           </div>
         )}
-        <div className="mx-auto max-w-[1600px] animate-fade-in-up p-4 sm:p-6 lg:p-8">
+        <div
+          className={cn(
+            "animate-fade-in-up",
+            fullBleed ? "min-h-0 flex-1" : "mx-auto max-w-[1600px] p-4 sm:p-6 lg:p-8",
+          )}
+        >
           {/* Sem empresa ativa não há o que carregar: toda query fica
               desabilitada e, no react-query, query desabilitada permanece
               "pendente" para sempre — a tela ficava girando sem fim. O super
