@@ -14,7 +14,7 @@ import {
   useUpdateContactMutation, useDeleteContactMutation, useCreateAppointmentMutation, usePipelineStagesQuery,
   useContactFieldsQuery,
 } from "@/hooks/queries";
-import { getStageLabel, getStageTone, type Contact, type ContactFieldValue } from "@/lib/types";
+import { getStageLabel, getStageTone, LEAD_SOURCES, type Contact, type ContactFieldValue } from "@/lib/types";
 import ContactFieldsForm from "@/components/contacts/ContactFieldsForm";
 import TagPicker from "@/components/contacts/TagPicker";
 import ContactRecords from "@/components/contacts/ContactRecords";
@@ -43,6 +43,8 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
   const [birthDate, setBirthDate] = useState("");
   const [stage, setStage] = useState("new");
   const [notes, setNotes] = useState("");
+  const [source, setSource] = useState("");
+  const [sourceDetail, setSourceDetail] = useState("");
   const [apptTitle, setApptTitle] = useState("");
   const [apptStartsAt, setApptStartsAt] = useState("");
 
@@ -54,6 +56,8 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
     setBirthDate(contact.birth_date ?? "");
     setStage(contact.stage);
     setNotes(contact.notes ?? "");
+    setSource(contact.source ?? "");
+    setSourceDetail(contact.source_detail ?? "");
     setFieldValues({ ...(contact.fields ?? {}) });
     setTags([...(contact.tags ?? [])]);
     setApptTitle("");
@@ -73,6 +77,8 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
         birth_date: birthDate || null,
         stage,
         notes: notes.trim() || null,
+        source: source || null,
+        source_detail: sourceDetail.trim() || null,
         fields: fieldValues,
         tags,
       });
@@ -201,6 +207,36 @@ export default function ContactDetailModal({ contact, open, onClose }: ContactDe
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Origem do lead</Label>
+              <Select value={source || "none"} onValueChange={(v) => setSource(v === "none" ? "" : v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Não informado</SelectItem>
+                  {LEAD_SOURCES.map((s) => (
+                    <SelectItem key={s.key} value={s.key}>
+                      {s.label}
+                    </SelectItem>
+                  ))}
+                  {/* Origem gravada que não está na lista: continua escolhível. */}
+                  {source && !LEAD_SOURCES.some((s) => s.key === source) && (
+                    <SelectItem value={source}>{source}</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Detalhe da origem</Label>
+              <Input
+                placeholder="Anúncio, campanha, quem indicou..."
+                value={sourceDetail}
+                onChange={(e) => setSourceDetail(e.target.value)}
+              />
+            </div>
           </div>
           {fieldDefs.length > 0 && (
             <div className="space-y-2 rounded-lg border bg-muted/30 p-3">

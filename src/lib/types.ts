@@ -51,8 +51,34 @@ export interface Contact {
   fields: Record<string, ContactFieldValue>;
   /** Nomes das etiquetas (contact_tags). */
   tags: string[];
+  /** De onde o lead veio (chave de LEAD_SOURCES). Null nos contatos antigos. */
+  source: string | null;
+  /** Detalhe da origem: título do anúncio, nome do formulário, quem indicou... */
+  source_detail: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Origens do lead. As cinco primeiras o CRM preenche sozinho na entrada; as
+ * outras a equipe escolhe na ficha. Chave desconhecida aparece como veio.
+ */
+export const LEAD_SOURCES: Array<{ key: string; label: string }> = [
+  { key: "whatsapp", label: "WhatsApp (orgânico / direto)" },
+  { key: "anuncio", label: "Anúncio (Meta)" },
+  { key: "captacao", label: "Formulário de captação" },
+  { key: "prospeccao", label: "Prospecção (empresa chamou)" },
+  { key: "manual", label: "Cadastro manual" },
+  { key: "indicacao", label: "Indicação" },
+  { key: "instagram", label: "Instagram" },
+  { key: "site", label: "Site" },
+  { key: "evento", label: "Loja física / evento" },
+  { key: "outro", label: "Outro" },
+];
+
+export function leadSourceLabel(source: string | null | undefined): string {
+  if (!source) return "Não informado";
+  return LEAD_SOURCES.find((s) => s.key === source)?.label ?? source;
 }
 
 /** O mínimo que um formulário de campos precisa (contact_fields ou record_types.fields). */

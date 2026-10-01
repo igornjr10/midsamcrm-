@@ -185,6 +185,8 @@ Deno.serve(async (req: Request) => {
         birth_date: birth,
         fields: fieldValues,
         tags: form.tag ? [form.tag] : [],
+        source: "captacao",
+        source_detail: form.title || null,
       }).select("id").maybeSingle();
       if (error || !created) return json({ error: "não foi possível cadastrar" }, 500);
       contactId = (created as { id: string }).id;

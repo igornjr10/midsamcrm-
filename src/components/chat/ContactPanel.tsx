@@ -19,7 +19,7 @@ import {
 } from "@/hooks/queries";
 import {
   contactInitial, contactLabel, formatPhone, getStageLabel, getStageTone, ORDER_STATUSES,
-  TICKET_STATUSES, teamLabel, type Contact,
+  TICKET_STATUSES, leadSourceLabel, teamLabel, type Contact,
 } from "@/lib/types";
 import { formatFieldValue } from "@/lib/fields";
 import TagPicker from "@/components/contacts/TagPicker";
@@ -215,6 +215,14 @@ export default function ContactPanel({ contact }: { contact: Contact }) {
                 {CANAL[waConfig?.provider ?? ""] ?? "WhatsApp"}
               </span>
             </Row>
+            <Row label="Origem">
+              <span title={contact.source_detail ?? undefined}>{leadSourceLabel(contact.source)}</span>
+            </Row>
+            {contact.source_detail && (
+              <p className="-mt-0.5 truncate text-right text-xs text-muted-foreground" title={contact.source_detail}>
+                {contact.source_detail}
+              </p>
+            )}
             <Row label="Entrou em">{dia(contact.created_at)}</Row>
           </dl>
 
