@@ -60,12 +60,31 @@ type WhatsappMessage = {
 /** Origem do lead gravada só na criação do contato (contacts.source). */
 type LeadOrigin = { source: string; detail?: string | null };
 
-/** Mensagem recebida: veio de anúncio ou é contato direto pelo WhatsApp. */
-function originFromMessage(msg: WhatsappMessage): LeadOrigin {
+/**
+ * Origem de quem mandou a primeira mensagem, em ordem de confiança:
+ * 1. cartão do anúncio que o WhatsApp anexa (clique para o WhatsApp);
+ * 2. código de link rastreável na mensagem pronta, ex. "Vi o anúncio [A1]";
+ * 3. contato direto pelo WhatsApp.
+ */
+async function originFromMessage(supabase: Db, companyId: string, msg: WhatsappMessage): Promise<LeadOrigin> {
   const ref = msg.referral;
   if (ref && (ref.source_type === "ad" || ref.headline || ref.source_url)) {
     return { source: "anuncio", detail: ref.headline?.trim() || ref.body?.trim() || ref.source_url || null };
   }
+
+  const text = msg.text?.body ?? msg.image?.caption ?? msg.video?.caption ?? "";
+  for (const [, code] of text.matchAll(/\[([A-Za-z0-9_-]{1,20})\]/g)) {
+    const { data } = await supabase
+      .from("lead_source_codes")
+      .select("source, label")
+      .eq("company_id", companyId)
+      // ilike ignora maiúsculas; o _ é coringa nele e precisa de escape (% e \
+      // não passam pela regex do código).
+      .ilike("code", code.replaceAll("_", "\\_"))
+      .maybeSingle();
+    if (data) return { source: String(data.source), detail: String(data.label) };
+  }
+
   return { source: "whatsapp" };
 }
 
@@ -523,7 +542,8 @@ async function findOrCreateContact(
   config: WhatsappConfig,
   phone: string,
   displayName: string | null,
-  origin: LeadOrigin = { source: "whatsapp" },
+  // Função quando calcular custa consulta: só roda se o contato for novo.
+  origin: LeadOrigin | (() => Promise<LeadOrigin>) = { source: "whatsapp" },
 ): Promise<{ id: string; ai_paused: boolean } | null> {
   const { data: existing } = await supabase.rpc("find_contact_by_phone", {
     p_company_id: config.company_id,
@@ -535,6 +555,7 @@ async function findOrCreateContact(
     return { id: found.id, ai_paused: found.ai_paused ?? false };
   }
 
+  const resolved = typeof origin === "function" ? await origin() : origin;
   const { data: created, error } = await supabase
     .from("contacts")
     .insert({
@@ -543,8 +564,8 @@ async function findOrCreateContact(
       name: displayName?.trim() || phone,
       phone,
       stage: "new",
-      source: origin.source,
-      source_detail: origin.detail?.slice(0, 200) ?? null,
+      source: resolved.source,
+      source_detail: resolved.detail?.slice(0, 200) ?? null,
     })
     .select("id, ai_paused")
     .maybeSingle();
@@ -1818,7 +1839,8 @@ async function processChange(
     if (!content && !mediaUrl) continue;
 
     const contact = await findOrCreateContact(
-      supabase, config, msg.from, nameByWaId.get(msg.from) ?? null, originFromMessage(msg),
+      supabase, config, msg.from, nameByWaId.get(msg.from) ?? null,
+      () => originFromMessage(supabase, config.company_id, msg),
     );
     if (!contact) continue;
 
@@ -2294,6 +2316,16 @@ Deno.serve(async (req: Request) => {
       if (!config) {
         console.log("webhook(uazapi): instância desconhecida");
         return json({ ok: true, ignored: "instância desconhecida" });
+      }
+
+      // TEMPORÁRIO — descobrir onde a uazapi põe o cartão do anúncio (clique
+      // para o WhatsApp). Só guarda evento que cita anúncio; conversa comum não
+      // entra. Remover junto com a tabela webhook_debug depois do teste.
+      const raw = JSON.stringify(payload);
+      if (/externalAdReply|ctwa|conversionSource|entryPoint|referral|adReply/i.test(raw)) {
+        const { error: debugError } = await supabase.from("webhook_debug")
+          .insert({ company_id: config.company_id, provider: "uazapi", payload });
+        if (debugError) console.log("webhook_debug:", debugError.message);
       }
 
       const value = uaz.normalizeWebhook(payload);

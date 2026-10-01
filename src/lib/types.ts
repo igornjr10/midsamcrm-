@@ -76,6 +76,17 @@ export const LEAD_SOURCES: Array<{ key: string; label: string }> = [
   { key: "outro", label: "Outro" },
 ];
 
+/** Código de link rastreável (lead_source_codes): "[A1]" na mensagem pronta. */
+export interface LeadSourceCode {
+  id: string;
+  company_id: string;
+  code: string;
+  source: string;
+  label: string;
+  message: string;
+  created_at: string;
+}
+
 export function leadSourceLabel(source: string | null | undefined): string {
   if (!source) return "Não informado";
   return LEAD_SOURCES.find((s) => s.key === source)?.label ?? source;
