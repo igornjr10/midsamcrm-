@@ -448,3 +448,6 @@ verify_jwt = false
 # identifica a empresa; o que se grava é só o que o formulário pediu.
 [functions.lead-capture]
 verify_jwt = false
+
+[functions.sdr-simulate]
+verify_jwt = false

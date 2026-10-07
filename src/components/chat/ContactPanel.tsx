@@ -349,6 +349,13 @@ export default function ContactPanel({ contact }: { contact: Contact }) {
               </Row>
               {contact.email && <Row label="E-mail">{contact.email}</Row>}
             </dl>
+            {/* Fica depois que alguém assume: é a ficha que a IA deixou. */}
+            {contact.handoff_summary && (
+              <div className="mt-2 rounded-lg bg-muted/50 p-2.5 text-xs">
+                <p className="font-semibold text-muted-foreground">Resumo da IA ao passar a conversa</p>
+                <p className="mt-1 whitespace-pre-wrap">{contact.handoff_summary}</p>
+              </div>
+            )}
           </Section>
 
           {/* ── Etiquetas ──────────────────────────────────────────────────── */}

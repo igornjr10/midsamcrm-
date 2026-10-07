@@ -649,13 +649,23 @@ export default function Chat() {
                 Um aviso de cada vez — quem assumiu a conversa manda, porque é o
                 único dos dois que tem botão para desfazer aqui. */}
             {selectedContact.needs_human_at ? (
-              <div className="flex items-center gap-2 border-b bg-rose-500/10 px-4 py-2 text-xs text-rose-700 dark:text-rose-400">
-                <Hand className="h-3.5 w-3.5 shrink-0" />
-                <span>
-                  <span className="font-semibold">O lead pediu uma pessoa</span>
-                  {selectedContact.needs_human_reason ? `: ${selectedContact.needs_human_reason}` : "."}{" "}
-                  A IA parou de responder e está esperando você. Qualquer mensagem sua encerra o pedido.
-                </span>
+              <div className="border-b bg-rose-500/10 px-4 py-2 text-xs text-rose-700 dark:text-rose-400">
+                <div className="flex items-center gap-2">
+                  <Hand className="h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    <span className="font-semibold">O lead pediu uma pessoa</span>
+                    {selectedContact.needs_human_reason ? `: ${selectedContact.needs_human_reason}` : "."}{" "}
+                    A IA parou de responder e está esperando você. Qualquer mensagem sua encerra o pedido.
+                  </span>
+                </div>
+                {/* O que a IA já coletou: quem assume não precisa ler a conversa
+                    inteira nem perguntar de novo o que o lead já respondeu. */}
+                {selectedContact.handoff_summary && (
+                  <details className="mt-1.5 pl-[22px]" open>
+                    <summary className="cursor-pointer font-semibold">Resumo da IA</summary>
+                    <p className="mt-1 whitespace-pre-wrap text-foreground/80">{selectedContact.handoff_summary}</p>
+                  </details>
+                )}
               </div>
             ) : selectedContact.ai_paused && selectedContact.ai_paused_reason === "humano_respondeu" ? (
               <div className="flex items-center gap-2 border-b bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-400">

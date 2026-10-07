@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import type { AiConfig } from "@/lib/types";
+import type { AiConfig, SdrPromptFields } from "@/lib/types";
 
 export function aiConfigQueryKey(companyId: string | undefined) {
   return ["ai-config", companyId] as const;
@@ -15,7 +15,10 @@ const PUBLIC_COLUMNS =
   "ai_only_open_stages, followup_enabled, followup_timezone, followup_window_start, " +
   "followup_window_end, followup_skip_weekends, followup_only_open_stages, reply_window_enabled, " +
   "reply_window_start, reply_window_end, reply_skip_weekends, reply_offhours_message, " +
-  "created_at, updated_at";
+  // 0062: tempo de resposta, ativação e encaminhamento.
+  "reply_first_delay_seconds, reply_delay_seconds, reply_debounce_seconds, only_new_leads, " +
+  "activated_at, trigger_phrases, allowed_sources, excluded_tags, handoff_user_id, max_unanswered, " +
+  "prompt_fields, created_at, updated_at";
 
 export function useAiConfigQuery(companyId: string | undefined) {
   return useQuery({
@@ -57,6 +60,16 @@ export interface SaveAiConfigInput {
   reply_window_end?: number;
   reply_skip_weekends?: boolean;
   reply_offhours_message?: string | null;
+  reply_first_delay_seconds?: number;
+  reply_delay_seconds?: number;
+  reply_debounce_seconds?: number;
+  only_new_leads?: boolean;
+  trigger_phrases?: string[];
+  allowed_sources?: string[];
+  excluded_tags?: string[];
+  handoff_user_id?: string | null;
+  max_unanswered?: number;
+  prompt_fields?: SdrPromptFields;
 }
 
 /** Sem upsert pelo mesmo motivo da config do WhatsApp: SELECT da chave revogado. */
