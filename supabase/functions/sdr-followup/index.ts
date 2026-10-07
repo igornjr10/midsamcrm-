@@ -69,6 +69,10 @@ type AiConfig = {
   followup_window_end: number;
   followup_skip_weekends: boolean;
   followup_only_open_stages: boolean;
+  /** Máximo de mensagens seguidas sem resposta do lead (0062). 0 = sem limite. */
+  max_unanswered?: number | null;
+  /** Etiquetas que o SDR nunca atende (0062) — follow-up incluído. */
+  excluded_tags?: string[] | null;
 };
 
 type FollowupStep = {
@@ -223,6 +227,34 @@ async function writeAiMessage(
   return toWhatsappFormat(reply);
 }
 
+/** Etiqueta excluída ou limite de mensagens sem resposta atingido? */
+async function blockedByLimits(
+  supabase: Db,
+  aiConfig: AiConfig,
+  contactId: string,
+  lastInboundAt: string | null,
+): Promise<boolean> {
+  const excluded = (aiConfig.excluded_tags ?? []).map((t) => t.toLowerCase());
+  if (excluded.length) {
+    const { data } = await supabase.from("contacts").select("tags").eq("id", contactId).maybeSingle();
+    const tags = ((data as { tags?: string[] | null } | null)?.tags ?? []).map((t) => t.toLowerCase());
+    if (tags.some((t) => excluded.includes(t))) return true;
+  }
+
+  const max = Number(aiConfig.max_unanswered ?? 0);
+  if (max > 0) {
+    let query = supabase
+      .from("conversations")
+      .select("id", { count: "exact", head: true })
+      .eq("contact_id", contactId)
+      .in("sender", ["ai", "user"]);
+    if (lastInboundAt) query = query.gt("created_at", lastInboundAt);
+    const { count } = await query;
+    if ((count ?? 0) >= max) return true;
+  }
+  return false;
+}
+
 async function runCompany(
   supabase: Db,
   aiConfig: AiConfig,
@@ -293,6 +325,11 @@ async function runCompany(
     const lastFollowupAt = candidate.last_followup_at ? Date.parse(candidate.last_followup_at) : null;
     const since = lastFollowupAt ?? lastMessageAt;
     if (now - since < step.delay_hours * 3_600_000) continue;
+
+    // Regras da aba Encaminhamento/Ativação, conferidas só para quem já está na
+    // hora de receber: etiqueta excluída (cliente, equipe...) e limite de
+    // mensagens seguidas sem resposta, que evita insistir com quem não responde.
+    if (await blockedByLimits(supabase, aiConfig, candidate.contact_id, candidate.last_inbound_at)) continue;
 
     const phone = (candidate.phone ?? "").replace(/\D/g, "");
     const logBase = {

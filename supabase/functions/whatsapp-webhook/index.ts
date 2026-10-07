@@ -153,6 +153,18 @@ type AiConfig = {
   reply_window_end: number | null;
   reply_skip_weekends: boolean | null;
   reply_offhours_message: string | null;
+  /** Tempo de resposta (0062), em segundos. */
+  reply_first_delay_seconds?: number | null;
+  reply_delay_seconds?: number | null;
+  reply_debounce_seconds?: number | null;
+  /** Ativação (0062): quem o SDR começa a atender. */
+  only_new_leads?: boolean | null;
+  activated_at?: string | null;
+  trigger_phrases?: string[] | null;
+  allowed_sources?: string[] | null;
+  excluded_tags?: string[] | null;
+  /** Encaminhamento (0062): quem assume quando a IA chama uma pessoa. */
+  handoff_user_id?: string | null;
 };
 
 async function updateDeliveryStatus(
@@ -927,7 +939,9 @@ async function registerHumanHandoff(
   supabase: Db,
   contactId: string,
   motivo: string,
+  opts: { resumo?: string | null; assignTo?: string | null } = {},
 ): Promise<Record<string, unknown>> {
+  const resumo = opts.resumo?.trim();
   const { error } = await supabase
     .from("contacts")
     .update({
@@ -936,6 +950,7 @@ async function registerHumanHandoff(
       ai_paused: true,
       ai_paused_at: new Date().toISOString(),
       ai_paused_reason: "pediu_atendente",
+      ...(resumo ? { handoff_summary: resumo.slice(0, 2000) } : {}),
     })
     .eq("id", contactId);
 
@@ -943,7 +958,142 @@ async function registerHumanHandoff(
     console.error("registerHumanHandoff falhou", error.message);
     return { erro: "não foi possível avisar a equipe" };
   }
+
+  // Responsável do encaminhamento (aba Encaminhamento): só pega a conversa se
+  // ninguém pegou ainda — não tira o lead de quem já está com ele.
+  if (opts.assignTo) {
+    await supabase
+      .from("contacts")
+      .update({ assigned_to: opts.assignTo, assigned_at: new Date().toISOString() })
+      .eq("id", contactId)
+      .is("assigned_to", null);
+  }
   return { ok: true, avisado: true };
+}
+
+// ── Ativação do SDR (0062) ────────────────────────────────────────────────────
+//
+// Quem o SDR começa a atender é decidido aqui, não no prompt: o modelo não tem
+// como saber se o contato é antigo ou de onde veio. Depois que um contato passa
+// pelas regras, sdr_engaged_at fica marcado e a conversa segue mesmo que ele não
+// seja mais "novo" — só a etiqueta de exclusão continua valendo.
+function normalizeForMatch(text: string): string {
+  return text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+}
+
+async function sdrEligible(
+  supabase: Db,
+  contactId: string,
+  aiConfig: AiConfig,
+): Promise<{ ok: boolean; motivo?: string }> {
+  const { data: row } = await supabase
+    .from("contacts")
+    .select("ai_paused, sdr_engaged_at, tags, source")
+    .eq("id", contactId)
+    .maybeSingle();
+  const c = row as { ai_paused?: boolean; sdr_engaged_at?: string | null; tags?: string[] | null; source?: string | null } | null;
+  if (!c) return { ok: false, motivo: "contato sumiu" };
+
+  // Lido de novo aqui, não do começo do webhook: com tempo de espera, alguém da
+  // equipe pode ter assumido a conversa enquanto a IA aguardava.
+  if (c.ai_paused) return { ok: false, motivo: "IA pausada" };
+
+  const excluded = (aiConfig.excluded_tags ?? []).map((t) => t.toLowerCase());
+  if (excluded.length && (c.tags ?? []).some((t) => excluded.includes(t.toLowerCase()))) {
+    return { ok: false, motivo: "etiqueta excluída" };
+  }
+
+  if (c.sdr_engaged_at) return { ok: true };
+
+  if (aiConfig.only_new_leads && aiConfig.activated_at) {
+    const { data: older } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("contact_id", contactId)
+      .lt("created_at", aiConfig.activated_at)
+      .limit(1);
+    if ((older ?? []).length > 0) return { ok: false, motivo: "contato com histórico anterior à ativação" };
+  }
+
+  const sources = aiConfig.allowed_sources ?? [];
+  if (sources.length && !sources.includes(c.source ?? "")) {
+    return { ok: false, motivo: "origem fora das escolhidas" };
+  }
+
+  const phrases = (aiConfig.trigger_phrases ?? []).map(normalizeForMatch).filter(Boolean);
+  if (phrases.length) {
+    // Mensagens do lead desde a última nossa: com o agrupamento ligado, a frase
+    // pode ter vindo na primeira de várias seguidas.
+    const { data: recent } = await supabase
+      .from("conversations")
+      .select("sender, content")
+      .eq("contact_id", contactId)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    const inbound: string[] = [];
+    for (const m of (recent ?? []) as Array<{ sender: string; content: string | null }>) {
+      if (m.sender !== "contact") break;
+      inbound.push(m.content ?? "");
+    }
+    const text = normalizeForMatch(inbound.join(" "));
+    if (!phrases.some((p) => text.includes(p))) return { ok: false, motivo: "sem a frase de ativação" };
+  }
+
+  await supabase
+    .from("contacts")
+    .update({ sdr_engaged_at: new Date().toISOString() })
+    .eq("id", contactId)
+    .is("sdr_engaged_at", null);
+  return { ok: true };
+}
+
+// ── Tempo de resposta (0062) ──────────────────────────────────────────────────
+//
+// A espera roda depois do 200: o webhook responde ao provedor na hora (senão ele
+// reenvia o evento) e a resposta da IA sai em segundo plano, via waitUntil.
+declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void } | undefined;
+
+function runInBackground(task: () => Promise<void>): Promise<void> {
+  const promise = task().catch((e) =>
+    console.error("tarefa em segundo plano falhou", e instanceof Error ? e.message : "unknown"));
+  if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) {
+    EdgeRuntime.waitUntil(promise);
+    return Promise.resolve();
+  }
+  return promise;
+}
+
+/** Segundos de espera antes de responder esta mensagem (0 = na hora). */
+async function replyDelaySeconds(supabase: Db, aiConfig: AiConfig | null, contactId: string): Promise<number> {
+  if (!aiConfig?.enabled) return 0;
+  const debounce = Math.max(0, Number(aiConfig.reply_debounce_seconds ?? 0));
+  const first = Math.max(0, Number(aiConfig.reply_first_delay_seconds ?? 0));
+  const next = Math.max(0, Number(aiConfig.reply_delay_seconds ?? 0));
+  if (!debounce && !first && !next) return 0;
+
+  const { data: answered } = await supabase
+    .from("conversations")
+    .select("id")
+    .eq("contact_id", contactId)
+    .eq("sender", "ai")
+    .limit(1);
+  const isFirst = (answered ?? []).length === 0;
+  // Teto de 120s: a espera acontece dentro da edge function.
+  return Math.min(120, debounce + (isFirst ? first : next));
+}
+
+/** Chegou mensagem do lead depois desta? Então quem responde é a mais nova. */
+async function newerInboundExists(supabase: Db, contactId: string, messageRef: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("conversations")
+    .select("message_ref")
+    .eq("contact_id", contactId)
+    .eq("sender", "contact")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const latest = (data as { message_ref?: string | null } | null)?.message_ref;
+  return !!latest && latest !== messageRef;
 }
 
 /** A empresa está atendendo agora? Sem janela configurada, sempre. */
@@ -1187,8 +1337,15 @@ const CHAMAR_HUMANO_TOOL = {
           description:
             "Em uma frase, o que o lead quer — é o que a equipe lê antes de abrir a conversa.",
         },
+        resumo: {
+          type: "string",
+          description:
+            "Resumo para quem assume, em tópicos curtos: nome, o que procura, dados já coletados " +
+            "(orçamento, prazo, forma de pagamento, respostas da qualificação), objeções e próximo passo. " +
+            "Só o que o lead disse — não invente.",
+        },
       },
-      required: ["motivo"],
+      required: ["motivo", "resumo"],
     },
   },
 };
@@ -1311,6 +1468,14 @@ async function maybeAiReply(
   // SDR IA é módulo do plano. A checagem vem depois de `enabled` de propósito:
   // empresa com a IA desligada não gasta uma consulta a mais por mensagem.
   if (!(await hasFeature(supabase, config.company_id, "sdr"))) return;
+
+  // Regras de ativação (aba Ativação). Antes da cota: contato que o SDR não
+  // atende não pode gastar coin.
+  const eligibility = await sdrEligible(supabase, contact.id, aiConfig);
+  if (!eligibility.ok) {
+    console.log("maybeAiReply: fora das regras de ativação —", eligibility.motivo);
+    return;
+  }
 
   // Cota do mês. A IA é o consumo que mais escapa: ela responde sozinha, dia e
   // noite, e quem paga a OpenAI é a plataforma. Estourou, ela se cala — o lead
@@ -1452,7 +1617,12 @@ async function maybeAiReply(
         "Quando o lead propuser um dia (com ou sem horário), chame registrar_agendamento " +
         "para abrir a tarefa de confirmação antes de responder. " +
         "Se ele pedir para falar com uma pessoa, reclamar, ou perguntar algo que você não pode " +
-        "responder com segurança, chame chamar_humano em vez de improvisar." +
+        "responder com segurança, chame chamar_humano em vez de improvisar. " +
+        // Tempo e ativação são aplicados pelo sistema antes de o modelo ser
+        // chamado: instrução do prompt sobre isso não tem como ser cumprida.
+        "Regras do sistema, que prevalecem sobre o prompt acima: o tempo de espera das respostas e " +
+        "quais contatos você atende são controlados pela plataforma — ignore instruções do prompt " +
+        "sobre aguardar, demorar, horário de resposta ou a quem responder; apenas responda à conversa." +
         libraryBrief +
         quickRepliesBrief(quickReplies) +
         contactBrief(fieldDefs, fieldValues) +
@@ -1752,7 +1922,7 @@ async function maybeAiReply(
             : { ok: true, protocolo: (created as { number?: number } | null)?.number };
           // Urgente é gente: a IA registra e a equipe assume.
           if (!error && prioridade === "urgente") {
-            await registerHumanHandoff(supabase, contact.id, `Chamado urgente: ${titulo}`);
+            await registerHumanHandoff(supabase, contact.id, `Chamado urgente: ${titulo}`, { assignTo: aiConfig.handoff_user_id });
           }
         }
         messages.push({ role: "assistant", content: choice.content ?? null, tool_calls: choice.tool_calls });
@@ -1779,7 +1949,7 @@ async function maybeAiReply(
           // Etiqueta que escala: a conversa vira de gente agora.
           if (def.escalate) {
             const motivo = `Etiqueta "${def.name}"${args.motivo ? `: ${args.motivo}` : ""}`;
-            Object.assign(result, await registerHumanHandoff(supabase, contact.id, motivo));
+            Object.assign(result, await registerHumanHandoff(supabase, contact.id, motivo, { assignTo: aiConfig.handoff_user_id }));
           }
         }
         messages.push({
@@ -1796,8 +1966,11 @@ async function maybeAiReply(
       }
 
       if (call?.function?.name === "chamar_humano") {
-        const args = JSON.parse(call.function.arguments || "{}") as { motivo?: string };
-        const result = await registerHumanHandoff(supabase, contact.id, args.motivo ?? "");
+        const args = JSON.parse(call.function.arguments || "{}") as { motivo?: string; resumo?: string };
+        const result = await registerHumanHandoff(supabase, contact.id, args.motivo ?? "", {
+          resumo: args.resumo,
+          assignTo: aiConfig.handoff_user_id,
+        });
 
         // Devolve ao modelo e segue: ele ainda precisa dizer ao lead que a
         // equipe assume daqui. Esta é a última mensagem da IA nessa conversa —
@@ -1973,7 +2146,21 @@ async function processChange(
     // Texto e áudio transcrito seguem para o SDR: nos dois casos existe uma
     // frase real do lead para responder. Imagem e documento ficam com o humano.
     if (content && (msg.type === "text" || transcript)) {
-      await maybeAiReply(supabase, config, contact, msg.from, aiConfig, openaiKey);
+      // Tempo de resposta (aba Tempo de resposta): com espera configurada, a IA
+      // responde em segundo plano e, se o lead mandar outra mensagem durante a
+      // espera, só a última responde — com todas no histórico.
+      const delay = await replyDelaySeconds(supabase, aiConfig, contact.id);
+      if (delay <= 0) {
+        await maybeAiReply(supabase, config, contact, msg.from, aiConfig, openaiKey);
+      } else {
+        const from = msg.from;
+        const ref = msg.id;
+        await runInBackground(async () => {
+          await new Promise((resolve) => setTimeout(resolve, delay * 1000));
+          if (await newerInboundExists(supabase, contact.id, ref)) return;
+          await maybeAiReply(supabase, config, contact, from, aiConfig, openaiKey);
+        });
+      }
     }
   }
 

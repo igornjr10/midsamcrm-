@@ -55,6 +55,10 @@ export interface Contact {
   source: string | null;
   /** Detalhe da origem: título do anúncio, nome do formulário, quem indicou... */
   source_detail: string | null;
+  /** Quando o SDR começou a atender — dali em diante a conversa segue (0062). */
+  sdr_engaged_at: string | null;
+  /** Resumo que a IA escreveu ao passar a conversa para uma pessoa. */
+  handoff_summary: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -623,8 +627,36 @@ export interface AiConfig {
   reply_skip_weekends: boolean;
   /** Aviso mandado uma vez a cada 12h fora do horário. Null = silêncio total. */
   reply_offhours_message: string | null;
+  /** Tempo de resposta, em segundos (0062). Aplicado pelo webhook, não pelo prompt. */
+  reply_first_delay_seconds: number;
+  reply_delay_seconds: number;
+  reply_debounce_seconds: number;
+  /** Ativação (0062): quem o SDR começa a atender. */
+  only_new_leads: boolean;
+  activated_at: string | null;
+  trigger_phrases: string[];
+  allowed_sources: string[];
+  excluded_tags: string[];
+  /** Quem vira responsável quando a IA chama uma pessoa. */
+  handoff_user_id: string | null;
+  /** Máximo de mensagens seguidas sem resposta do lead. 0 = sem limite. */
+  max_unanswered: number;
+  /** Campos do formulário que monta o prompt. */
+  prompt_fields: SdrPromptFields;
   created_at: string;
   updated_at: string;
+}
+
+/** Formulário da aba Comunicação: vira o prompt do SDR (ver lib/sdrPrompt). */
+export interface SdrPromptFields {
+  sdr_name?: string;
+  company_name?: string;
+  goal?: string;
+  offer?: string;
+  tone?: string;
+  qualification?: string;
+  boundaries?: string;
+  handoff_when?: string;
 }
 
 /** Nicho de mercado da empresa — define o pacote de módulos que ela recebe. */

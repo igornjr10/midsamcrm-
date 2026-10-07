@@ -1,103 +1,98 @@
 import { useEffect, useState } from "react";
-import { Bot, CalendarClock, HeartHandshake, History, Sparkles } from "lucide-react";
+import {
+  Bot, CalendarClock, Hand, HeartHandshake, History, MessageSquareText, Timer, Zap,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useAiConfigQuery, useSaveAiConfigMutation } from "@/hooks/queries";
 import FollowupSettings from "@/components/sdr/FollowupSettings";
 import FollowupHistory from "@/components/sdr/FollowupHistory";
 import RelationshipSettings from "@/components/sdr/RelationshipSettings";
+import SdrActivationTab from "@/components/sdr/SdrActivationTab";
+import SdrTimingTab from "@/components/sdr/SdrTimingTab";
+import SdrCommunicationTab from "@/components/sdr/SdrCommunicationTab";
+import SdrHandoffTab from "@/components/sdr/SdrHandoffTab";
+import { draftFromConfig, parsePhrases, type SdrDraft } from "@/components/sdr/sdrDraft";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
-import { PasswordInput } from "@/components/ui/password-input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SkeletonForm } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { cn } from "@/lib/utils";
 
-const DEFAULT_PROMPT =
-  "Você é um atendente comercial simpático e objetivo da empresa. Responda em português do Brasil, " +
-  "em mensagens curtas de WhatsApp. Qualifique o interesse do cliente: pergunte o nome, o que ele " +
-  "procura e a urgência. Nunca invente preços, prazos ou condições — se não souber, diga que um " +
-  "atendente humano vai confirmar.";
-
-// 0..24: o começo da janela vai até 23h e o fim começa em 1h (ver os slice()
-// mais abaixo), então a lista precisa das duas pontas.
-const HOURS = Array.from({ length: 25 }, (_, i) => i);
-
-const MODELS = [
-  { value: "gpt-4o-mini", label: "GPT-4o mini (rápido e barato)" },
-  { value: "gpt-4o", label: "GPT-4o (mais inteligente)" },
-  { value: "gpt-4.1-mini", label: "GPT-4.1 mini" },
-];
+// As quatro abas do agente editam o mesmo rascunho e salvam juntas; Follow-up,
+// Relacionamento e Histórico têm o próprio salvar.
+const AGENT_TABS = ["ativacao", "tempo", "comunicacao", "encaminhamento"];
 
 export default function SdrIa() {
   const { company } = useAuth();
   const { data: config, isPending } = useAiConfigQuery(company?.id);
   const saveConfig = useSaveAiConfigMutation();
 
-  const [enabled, setEnabled] = useState(false);
-  const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
-  const [model, setModel] = useState("gpt-4o-mini");
-  const [apiKey, setApiKey] = useState("");
-  const [pauseOnHuman, setPauseOnHuman] = useState(true);
-  const [onlyOpenStages, setOnlyOpenStages] = useState(true);
-  const [windowEnabled, setWindowEnabled] = useState(false);
-  const [windowStart, setWindowStart] = useState(8);
-  const [windowEnd, setWindowEnd] = useState(20);
-  const [skipWeekends, setSkipWeekends] = useState(false);
-  const [offhoursMessage, setOffhoursMessage] = useState("");
+  const [tab, setTab] = useState("ativacao");
+  const [draft, setDraft] = useState<SdrDraft>(() => draftFromConfig(null));
+  const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     if (!config) return;
-    setEnabled(config.enabled);
-    setPrompt(config.system_prompt ?? DEFAULT_PROMPT);
-    setModel(config.model);
-    setApiKey("");
-    setPauseOnHuman(config.pause_ai_on_human_reply ?? true);
-    setOnlyOpenStages(config.ai_only_open_stages ?? true);
-    setWindowEnabled(config.reply_window_enabled ?? false);
-    setWindowStart(config.reply_window_start ?? 8);
-    setWindowEnd(config.reply_window_end ?? 20);
-    setSkipWeekends(config.reply_skip_weekends ?? false);
-    setOffhoursMessage(config.reply_offhours_message ?? "");
+    setDraft(draftFromConfig(config));
+    setDirty(false);
   }, [config]);
+
+  const update = (patch: Partial<SdrDraft>) => {
+    setDraft((d) => ({ ...d, ...patch }));
+    setDirty(true);
+  };
 
   const handleSave = async () => {
     if (!company) return;
-    if (enabled && !apiKey.trim() && !config?.has_openai_api_key) {
-      toast.error("Informe a chave da OpenAI para ligar o SDR IA.");
+    if (draft.enabled && !draft.apiKey.trim() && !config?.has_openai_api_key) {
+      toast.error("Informe a chave da OpenAI (aba Comunicação) para ligar o SDR IA.");
+      setTab("comunicacao");
       return;
     }
-    if (windowEnabled && windowEnd <= windowStart) {
+    if (draft.windowEnabled && draft.windowEnd <= draft.windowStart) {
       toast.error("O fim do horário de atendimento tem que ser depois do início.");
+      setTab("tempo");
       return;
     }
     try {
       await saveConfig.mutateAsync({
         company_id: company.id,
-        enabled,
-        system_prompt: prompt.trim() || null,
-        model,
+        enabled: draft.enabled,
+        system_prompt: draft.prompt.trim() || null,
+        model: draft.model,
         // Vazio mantém a chave gravada: ela não é lida de volta pelo navegador.
-        openai_api_key: apiKey.trim() || null,
-        pause_ai_on_human_reply: pauseOnHuman,
-        ai_only_open_stages: onlyOpenStages,
-        reply_window_enabled: windowEnabled,
-        reply_window_start: windowStart,
-        reply_window_end: windowEnd,
-        reply_skip_weekends: skipWeekends,
-        reply_offhours_message: offhoursMessage.trim() || null,
+        openai_api_key: draft.apiKey.trim() || null,
+        pause_ai_on_human_reply: draft.pauseOnHuman,
+        ai_only_open_stages: draft.onlyOpenStages,
+        reply_window_enabled: draft.windowEnabled,
+        reply_window_start: draft.windowStart,
+        reply_window_end: draft.windowEnd,
+        reply_skip_weekends: draft.skipWeekends,
+        reply_offhours_message: draft.offhoursMessage.trim() || null,
+        reply_first_delay_seconds: draft.firstDelay,
+        reply_delay_seconds: draft.nextDelay,
+        reply_debounce_seconds: draft.debounce,
+        only_new_leads: draft.onlyNewLeads,
+        trigger_phrases: parsePhrases(draft.triggerPhrases),
+        allowed_sources: draft.allowedSources,
+        excluded_tags: draft.excludedTags,
+        handoff_user_id: draft.handoffUserId,
+        max_unanswered: draft.maxUnanswered,
+        prompt_fields: draft.promptFields,
       });
-      toast.success(enabled ? "SDR IA ligado! Novas mensagens de leads serão respondidas automaticamente." : "Configuração salva.");
+      setDirty(false);
+      toast.success(
+        draft.enabled && !config?.enabled
+          ? "SDR IA ligado! Leads que seguirem as regras de ativação serão atendidos."
+          : "Configuração salva.",
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erro ao salvar");
     }
   };
+
+  const timezone = config?.followup_timezone ?? "America/Sao_Paulo";
 
   return (
     <div className="max-w-3xl">
@@ -107,254 +102,67 @@ export default function SdrIa() {
         description="Atendimento e follow-up automáticos no WhatsApp"
         badges={
           <>
-            {config?.enabled ? (
-              <Badge variant="success">Ativo</Badge>
-            ) : (
-              <Badge variant="outline">Desligado</Badge>
-            )}
+            {config?.enabled ? <Badge variant="success">Ativo</Badge> : <Badge variant="outline">Desligado</Badge>}
             {config?.followup_enabled && <Badge variant="secondary">Follow-up ligado</Badge>}
           </>
         }
       />
 
-      <Tabs defaultValue="agente">
-        <TabsList>
-          <TabsTrigger value="agente">
-            <Sparkles />
-            Agente
-          </TabsTrigger>
-          <TabsTrigger value="followup">
-            <CalendarClock />
-            Follow-up
-          </TabsTrigger>
-          <TabsTrigger value="relacionamento">
-            <HeartHandshake />
-            Relacionamento
-          </TabsTrigger>
-          <TabsTrigger value="historico">
-            <History />
-            Histórico
-          </TabsTrigger>
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList className="h-auto flex-wrap">
+          <TabsTrigger value="ativacao"><Zap />Ativação</TabsTrigger>
+          <TabsTrigger value="tempo"><Timer />Tempo de resposta</TabsTrigger>
+          <TabsTrigger value="comunicacao"><MessageSquareText />Comunicação</TabsTrigger>
+          <TabsTrigger value="encaminhamento"><Hand />Encaminhamento</TabsTrigger>
+          <TabsTrigger value="followup"><CalendarClock />Follow-up</TabsTrigger>
+          <TabsTrigger value="relacionamento"><HeartHandshake />Relacionamento</TabsTrigger>
+          <TabsTrigger value="historico"><History />Histórico</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="agente" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Atendimento automático de leads</CardTitle>
-              <CardDescription>
-                Quando ligado, toda mensagem de texto recebida no WhatsApp é respondida automaticamente
-                pela IA, seguindo o prompt abaixo. Você pode pausar a IA em qualquer conversa individual
-                pelo Chat (botão "Pausar IA") para assumir o atendimento.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {isPending ? (
-                <SkeletonForm fields={4} />
-              ) : (
-                <>
-                  <label
-                    className={cn(
-                      "flex cursor-pointer items-center gap-3 rounded-lg border p-3.5 transition-colors",
-                      enabled ? "border-primary/40 bg-primary/5" : "hover:bg-accent/50",
-                    )}
-                  >
-                    <Checkbox checked={enabled} onCheckedChange={(v) => setEnabled(v === true)} />
-                    <div>
-                      <p className="text-sm font-medium">Ligar SDR IA</p>
-                      <p className="text-xs text-muted-foreground">
-                        Responder leads automaticamente no WhatsApp
-                      </p>
-                    </div>
-                  </label>
-
-                  <label
-                    className={cn(
-                      "flex cursor-pointer items-center gap-3 rounded-lg border p-3.5 transition-colors",
-                      pauseOnHuman ? "border-primary/40 bg-primary/5" : "hover:bg-accent/50",
-                    )}
-                  >
-                    <Checkbox
-                      checked={pauseOnHuman}
-                      onCheckedChange={(v) => setPauseOnHuman(v === true)}
-                    />
-                    <div>
-                      <p className="text-sm font-medium">Pausar a IA quando o vendedor entrar</p>
-                      <p className="text-xs text-muted-foreground">
-                        Assim que alguém do time responder — pelo Chat ou pelo celular — a IA para
-                        naquela conversa. Ela só volta quando você clicar em "Reativar IA".
-                      </p>
-                    </div>
-                  </label>
-
-                  <label
-                    className={cn(
-                      "flex cursor-pointer items-center gap-3 rounded-lg border p-3.5 transition-colors",
-                      onlyOpenStages ? "border-primary/40 bg-primary/5" : "hover:bg-accent/50",
-                    )}
-                  >
-                    <Checkbox
-                      checked={onlyOpenStages}
-                      onCheckedChange={(v) => setOnlyOpenStages(v === true)}
-                    />
-                    <div>
-                      <p className="text-sm font-medium">Não falar com negócio já fechado</p>
-                      <p className="text-xs text-muted-foreground">
-                        A IA ignora contatos em etapa de Ganho ou Perdido, inclusive quando foi o
-                        próprio funil que moveu o contato depois do pagamento. Reabriu o negócio, a
-                        IA volta sozinha.
-                      </p>
-                    </div>
-                  </label>
-
-                  <div className="space-y-1.5">
-                    <Label>Prompt do agente (personalidade e regras)</Label>
-                    <Textarea rows={7} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
-                    <p className="text-xs text-muted-foreground">
-                      Descreva o que a empresa vende, o tom de voz e o que a IA deve (e não deve) fazer.
-                    </p>
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-1.5">
-                      <Label>Modelo</Label>
-                      <Select value={model} onValueChange={setModel}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {MODELS.map((m) => (
-                            <SelectItem key={m.value} value={m.value}>
-                              {m.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label>Chave da OpenAI</Label>
-                      <PasswordInput
-                        placeholder={config?.has_openai_api_key ? "•••••••• (chave salva; deixe em branco para manter)" : "sk-..."}
-                        value={apiKey}
-                        onChange={(e) => setApiKey(e.target.value)}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Horário de atendimento.
-                      A janela do follow-up (aba ao lado) é outra coisa: lá o
-                      cron escolhe a hora de falar com quem sumiu. Aqui é a
-                      resposta a quem acabou de escrever — que até então saía a
-                      qualquer hora da madrugada. */}
-                  <div className="space-y-3 rounded-lg border p-4">
-                    <label className="flex cursor-pointer items-start gap-3">
-                      <Checkbox
-                        checked={windowEnabled}
-                        onCheckedChange={(v) => setWindowEnabled(v === true)}
-                        className="mt-0.5"
-                      />
-                      <div>
-                        <p className="text-sm font-medium">Responder só em horário de atendimento</p>
-                        <p className="text-xs text-muted-foreground">
-                          Fora dele a IA fica calada e a mensagem do lead espera não lida, para a
-                          equipe ver no dia seguinte
-                        </p>
-                      </div>
-                    </label>
-
-                    {windowEnabled && (
-                      <>
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <div className="space-y-1.5">
-                            <Label>Atender a partir das</Label>
-                            <Select
-                              value={String(windowStart)}
-                              onValueChange={(v) => setWindowStart(Number(v))}
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {HOURS.slice(0, 24).map((h) => (
-                                  <SelectItem key={h} value={String(h)}>
-                                    {String(h).padStart(2, "0")}:00
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-1.5">
-                            <Label>Até</Label>
-                            <Select
-                              value={String(windowEnd)}
-                              onValueChange={(v) => setWindowEnd(Number(v))}
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {HOURS.slice(1).map((h) => (
-                                  <SelectItem key={h} value={String(h)}>
-                                    {String(h).padStart(2, "0")}:00
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-
-                        <label className="flex cursor-pointer items-center gap-2 text-sm">
-                          <Checkbox
-                            checked={skipWeekends}
-                            onCheckedChange={(v) => setSkipWeekends(v === true)}
-                          />
-                          Não atender aos sábados e domingos
-                        </label>
-
-                        <div className="space-y-1.5">
-                          <Label>Aviso fora do horário (opcional)</Label>
-                          <Textarea
-                            rows={2}
-                            placeholder="Oi! Nosso atendimento é das 8h às 20h. Sua mensagem já está aqui e respondemos logo cedo."
-                            value={offhoursMessage}
-                            onChange={(e) => setOffhoursMessage(e.target.value)}
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            Mandado no máximo uma vez a cada 12h por contato — quem escreve cinco
-                            vezes de madrugada não recebe a mesma frase cinco vezes. Em branco, a IA
-                            simplesmente não responde.
-                          </p>
-                        </div>
-
-                        <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
-                          Usa o fuso configurado na aba Follow-up (
-                          {(config?.followup_timezone ?? "America/Sao_Paulo").replace("America/", "").replace("_", " ")}
-                          ).
-                        </p>
-                      </>
-                    )}
-                  </div>
-
-                  <Button onClick={handleSave} disabled={saveConfig.isPending}>
-                    {saveConfig.isPending ? "Salvando..." : "Salvar"}
-                  </Button>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+        {isPending ? (
+          <div className="mt-4"><SkeletonForm fields={4} /></div>
+        ) : (
+          <>
+            <TabsContent value="ativacao" className="mt-4">
+              <SdrActivationTab draft={draft} update={update} activatedAt={config?.activated_at ?? null} />
+            </TabsContent>
+            <TabsContent value="tempo" className="mt-4">
+              <SdrTimingTab draft={draft} update={update} timezone={timezone} />
+            </TabsContent>
+            <TabsContent value="comunicacao" className="mt-4">
+              <SdrCommunicationTab draft={draft} update={update} hasSavedKey={!!config?.has_openai_api_key} />
+            </TabsContent>
+            <TabsContent value="encaminhamento" className="mt-4">
+              <SdrHandoffTab draft={draft} update={update} />
+            </TabsContent>
+          </>
+        )}
 
         <TabsContent value="followup" className="mt-4">
           <FollowupSettings />
         </TabsContent>
-
         <TabsContent value="relacionamento" className="mt-4">
           <RelationshipSettings />
         </TabsContent>
-
         <TabsContent value="historico" className="mt-4">
           <FollowupHistory />
         </TabsContent>
       </Tabs>
+
+      {/* Salvar fixo: as quatro abas do agente salvam juntas, então o botão não
+          pode ficar escondido no fim de uma delas. */}
+      {AGENT_TABS.includes(tab) && !isPending && (
+        <div className="sticky bottom-0 z-20 -mx-4 mt-6 border-t bg-background/90 backdrop-blur-md sm:-mx-6 lg:-mx-8">
+          <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
+            <p className="text-xs text-muted-foreground">
+              {dirty ? "Alterações não salvas nas abas do agente." : "Tudo salvo."}
+            </p>
+            <Button onClick={() => void handleSave()} disabled={saveConfig.isPending || !dirty}>
+              {saveConfig.isPending ? "Salvando..." : "Salvar"}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
