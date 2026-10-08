@@ -15,7 +15,7 @@ import * as uaz from "../_shared/uazapi.ts";
 import * as owa from "../_shared/openwa.ts";
 import { hasFeature } from "../_shared/features.ts";
 import { consumeCoins } from "../_shared/usage.ts";
-import { toWhatsappFormat } from "../_shared/whatsapp-format.ts";
+import { stripFalseFileClaims, toWhatsappFormat } from "../_shared/whatsapp-format.ts";
 
 // Cliente com service role. Sem os genéricos explícitos o ReturnType resolve
 // para os defaults (never) e não aceita o cliente real.
@@ -1623,6 +1623,13 @@ async function maybeAiReply(
         "Regras do sistema, que prevalecem sobre o prompt acima: o tempo de espera das respostas e " +
         "quais contatos você atende são controlados pela plataforma — ignore instruções do prompt " +
         "sobre aguardar, demorar, horário de resposta ou a quem responder; apenas responda à conversa." +
+        " Regras de envio de arquivos: escrever 'ENVIEI O ARQUIVO' ou prometer um envio " +
+        "não envia nenhum anexo. Para enviar material, chame enviar_arquivo neste turno; " +
+        "não afirme que enviou ou que o cliente recebeu sem confirmação da ferramenta. " +
+        "Escolha apenas um arquivo cujo título e descrição correspondam ao assunto pedido. " +
+        "Nunca substitua um material por outro assunto (por exemplo, gestante por corporativo). " +
+        "Se não houver correspondência clara, peça esclarecimento ou chame chamar_humano. " +
+        "Se o cliente disser que recebeu o arquivo errado, não repita o mesmo arquivo. " +
         libraryBrief +
         quickRepliesBrief(quickReplies) +
         contactBrief(fieldDefs, fieldValues) +
@@ -1657,7 +1664,7 @@ async function maybeAiReply(
           parameters: {
             type: "object",
             properties: {
-              id: { type: "string", description: "id do arquivo, exatamente como listado" },
+              id: { type: "string", enum: library.map((asset) => asset.id), description: "id do arquivo cujo título e descrição correspondem ao pedido do cliente" },
               mensagem: { type: "string", description: "frase curta que acompanha o arquivo" },
             },
             required: ["id"],
@@ -1992,7 +1999,7 @@ async function maybeAiReply(
         const args = JSON.parse(call.function.arguments || "{}") as { id?: string; mensagem?: string };
         const asset = library.find((a) => a.id === args.id);
 
-        // Modelo inventou id: segue como conversa normal em vez de calar.
+        // Nunca aproveita texto de uma chamada de envio que falhou como confirmacao.
         if (!asset) {
           console.error("maybeAiReply: arquivo inexistente", args.id);
         } else {
@@ -2007,13 +2014,23 @@ async function maybeAiReply(
                 mimetype: item.mimetype,
                 libraryItemId: item.id,
               });
+              return;
             }
-            return;
           }
         }
+        const failureReply = "Não consegui enviar o arquivo agora. Você pode pedir atendimento da equipe para receber o material correto.";
+        const failureWamid = await sendWhatsappText(config, fromPhone, failureReply);
+        if (failureWamid) await logAiMessage(failureReply, failureWamid);
+        return;
       }
 
-      const reply = choice.content?.trim() ? toWhatsappFormat(choice.content.trim()) : "";
+      // Texto solto: nenhum anexo saiu neste turno. Se o modelo escreveu que
+      // enviou, a frase vai embora antes de o lead ler e ficar esperando.
+      const raw = choice.content?.trim() ? toWhatsappFormat(choice.content.trim()) : "";
+      const reply = stripFalseFileClaims(raw);
+      if (reply !== raw) {
+        console.error("maybeAiReply: modelo afirmou envio de arquivo sem chamar enviar_arquivo");
+      }
       if (!reply) return;
 
       const wamid = await sendWhatsappText(config, fromPhone, reply);

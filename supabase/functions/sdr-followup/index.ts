@@ -21,7 +21,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { parseWhatsAppApiError } from "../_shared/whatsapp-error.ts";
 import { resolveCompanyId } from "../_shared/company.ts";
 import { todayBrief } from "../_shared/date.ts";
-import { toWhatsappFormat } from "../_shared/whatsapp-format.ts";
+import { stripFalseFileClaims, toWhatsappFormat } from "../_shared/whatsapp-format.ts";
 import { buildTemplatePayload, renderTemplateText, type VariableMap } from "../_shared/whatsapp-template.ts";
 import {
   OUTBOUND_COLUMNS, sendText as sendOutboundText, type OutboundConfig,
@@ -224,7 +224,8 @@ async function writeAiMessage(
   const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
   const reply = data.choices?.[0]?.message?.content?.trim();
   if (!reply) throw new Error("A IA não retornou texto para o follow-up.");
-  return toWhatsappFormat(reply);
+  // O follow-up nem tem ferramenta de anexo: aqui a afirmação é sempre falsa.
+  return stripFalseFileClaims(toWhatsappFormat(reply));
 }
 
 /** Etiqueta excluída ou limite de mensagens sem resposta atingido? */
