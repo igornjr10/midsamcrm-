@@ -7,7 +7,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { resolveCompanyId } from "../_shared/company.ts";
 import { todayBrief } from "../_shared/date.ts";
-import { toWhatsappFormat } from "../_shared/whatsapp-format.ts";
+import { stripFalseFileClaims, toWhatsappFormat } from "../_shared/whatsapp-format.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -23,6 +23,38 @@ function json(body: unknown, status = 200): Response {
 }
 
 const MAX_TURNS = 30;
+
+type ChatContentPart = { type?: string; text?: string };
+type ChatCompletionData = {
+  choices?: Array<{
+    finish_reason?: string | null;
+    message?: {
+      content?: string | ChatContentPart[] | null;
+      refusal?: string | null;
+    };
+  }>;
+};
+
+function extractReply(data: ChatCompletionData): string {
+  const content = data.choices?.[0]?.message?.content;
+  if (typeof content === "string") return content.trim();
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => typeof part.text === "string" ? part.text : "")
+      .join("")
+      .trim();
+  }
+  return "";
+}
+
+function emptyReplyDetail(data: ChatCompletionData): string {
+  const choice = data.choices?.[0];
+  const finish = choice?.finish_reason;
+  const refusal = choice?.message?.refusal?.trim();
+  if (refusal) return `recusa do modelo: ${refusal.slice(0, 180)}`;
+  if (finish) return `finish_reason=${finish}`;
+  return "sem choice/message/content";
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -95,27 +127,54 @@ Deno.serve(async (req: Request) => {
       "[passaria para a equipe: quer desconto fora da tabela], e siga com a mensagem que o lead receberia." +
       (library ? `\n\nArquivos que você pode enviar:\n${library}` : "");
 
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model,
-        temperature: 0.7,
-        max_tokens: 300,
-        messages: [{ role: "system", content: system }, ...turns],
-      }),
-      signal: AbortSignal.timeout(30_000),
-    });
+    const callOpenAI = (messages: Array<{ role: string; content: string }>) =>
+      fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model,
+          temperature: 0.7,
+          max_tokens: 300,
+          messages,
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+
+    const messages = [{ role: "system", content: system }, ...turns];
+    let res = await callOpenAI(messages);
     if (!res.ok) {
       const detail = (await res.text().catch(() => "")).slice(0, 300);
       console.error("sdr-simulate: OpenAI", res.status, detail);
       return json({ error: res.status === 401 ? "A chave da OpenAI foi recusada." : "A OpenAI não respondeu. Tente de novo." }, 502);
     }
-    const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
-    const reply = data.choices?.[0]?.message?.content?.trim();
-    if (!reply) return json({ error: "A IA não devolveu texto." }, 502);
+    let data = await res.json() as ChatCompletionData;
+    let reply = extractReply(data);
+    if (!reply) {
+      console.error("sdr-simulate: resposta vazia da OpenAI", emptyReplyDetail(data));
+      res = await callOpenAI([
+        ...messages,
+        {
+          role: "user",
+          content:
+            "A resposta anterior veio vazia. Responda agora com APENAS uma mensagem curta de WhatsApp para o lead, em português do Brasil. Não deixe a resposta vazia.",
+        },
+      ]);
+      if (!res.ok) {
+        const detail = (await res.text().catch(() => "")).slice(0, 300);
+        console.error("sdr-simulate: retry OpenAI", res.status, detail);
+        return json({ error: "A OpenAI não respondeu. Tente de novo." }, 502);
+      }
+      data = await res.json() as ChatCompletionData;
+      reply = extractReply(data);
+    }
 
-    return json({ reply: toWhatsappFormat(reply) });
+    if (!reply) {
+      console.error("sdr-simulate: retry sem texto", emptyReplyDetail(data));
+      return json({ error: "A IA respondeu sem texto. Tente outro modelo ou reduza o prompt." }, 502);
+    }
+
+    // Mesma limpeza da produção: testar aqui tem que mostrar o que o lead veria.
+    return json({ reply: stripFalseFileClaims(toWhatsappFormat(reply)) });
   } catch (error) {
     console.error("sdr-simulate error:", error instanceof Error ? error.message : "unknown");
     return json({ error: "Erro interno" }, 500);
