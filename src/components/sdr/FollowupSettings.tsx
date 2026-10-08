@@ -142,6 +142,13 @@ export default function FollowupSettings() {
       toast.error("O fim da janela de envio precisa ser depois do início.");
       return;
     }
+    const invalidDelay = steps.findIndex((s) =>
+      !Number.isFinite(s.delay_hours) || s.delay_hours < 0.01 || s.delay_hours > 9999.99,
+    );
+    if (invalidDelay >= 0) {
+      toast.error(`Passo ${invalidDelay + 1}: informe um tempo de espera entre 0,01 e 9.999,99 horas.`);
+      return;
+    }
     const invalid = steps.findIndex((s) =>
       s.kind === "template" ? !s.template_name : !(s.message ?? "").trim(),
     );
@@ -160,22 +167,29 @@ export default function FollowupSettings() {
       return;
     }
 
+    let stepsSaved = false;
     try {
-      await Promise.all([
-        saveConfig.mutateAsync({
-          company_id: company.id,
-          followup_enabled: enabled,
-          followup_timezone: timezone,
-          followup_window_start: windowStart,
-          followup_window_end: windowEnd,
-          followup_skip_weekends: skipWeekends,
-          followup_only_open_stages: onlyOpenStages,
-        }),
-        saveSteps.mutateAsync({ companyId: company.id, steps }),
-      ]);
+      await saveSteps.mutateAsync({ companyId: company.id, steps });
+      stepsSaved = true;
+      await saveConfig.mutateAsync({
+        company_id: company.id,
+        followup_enabled: enabled,
+        followup_timezone: timezone,
+        followup_window_start: windowStart,
+        followup_window_end: windowEnd,
+        followup_skip_weekends: skipWeekends,
+        followup_only_open_stages: onlyOpenStages,
+      });
       toast.success(enabled ? "Follow-up ligado e cadência salva." : "Cadência salva.");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao salvar");
+      const detail = err && typeof err === "object" && "message" in err
+        && typeof err.message === "string" ? err.message : "Tente novamente.";
+      toast.error(
+        stepsSaved
+          ? "Os passos foram salvos, mas as configurações do follow-up não foram salvas."
+          : "Não foi possível salvar os passos do follow-up.",
+        { description: detail },
+      );
     }
   };
 
