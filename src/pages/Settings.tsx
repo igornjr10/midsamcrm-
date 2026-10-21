@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  Bell, BellOff, CalendarDays, Copy, CheckCircle, Gauge, Loader2, History, QrCode, RefreshCw,
-  Settings as SettingsIcon, Unplug, Volume2, VolumeX,
+  Bell, BellOff, CalendarDays, Copy, CheckCircle, Gauge, Loader2, History, KeyRound, Link2, Plug,
+  QrCode, RefreshCw, Settings as SettingsIcon, ShieldCheck, Smartphone, Unplug, UserRound,
+  Volume2, VolumeX,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -25,8 +26,10 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SkeletonForm } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AutomationTemplatesCard from "@/components/settings/AutomationTemplatesCard";
 import ChangePasswordCard from "@/components/settings/ChangePasswordCard";
+import { WhatsappLogo } from "@/components/settings/WhatsappLogo";
 
 const DATAFY_API_BASE = "https://cloud.datafyapi.com.br/v1";
 
@@ -304,8 +307,36 @@ export default function Settings() {
     const next = new URLSearchParams(searchParams);
     next.delete("google");
     next.delete("google_msg");
+    next.set("aba", "integracoes");
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams, queryClient, company]);
+
+  // Aba na URL: recarregar a página ou mandar o link para alguém cai no mesmo
+  // lugar. A volta do Google já chega na aba de integrações.
+  const tab = searchParams.get("aba") ?? (searchParams.get("google") ? "integracoes" : "whatsapp");
+  const changeTab = (value: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("aba", value);
+    setSearchParams(next, { replace: true });
+  };
+
+  // Ao abrir a tela já consulta o aparelho: sem isso o status fica "Nenhum
+  // número conectado" até alguém clicar em Verificar, mesmo com tudo no ar.
+  const configProvider = config?.provider;
+  useEffect(() => {
+    if (!company?.id || !configProvider || configProvider === "meta" || configProvider !== provider) return;
+    let cancelled = false;
+    void callInstance("status")
+      .then((res) => {
+        if (!cancelled) setInstanceState(res.state ?? "unknown");
+      })
+      .catch(() => {
+        if (!cancelled) setInstanceState("unknown");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [company?.id, configProvider, provider, callInstance]);
 
   const handleConnectGoogle = async () => {
     if (!company) return;
@@ -440,470 +471,624 @@ export default function Settings() {
     );
   }
 
+  // Resumo do topo da aba WhatsApp: o que está valendo agora, não o que está
+  // selecionado para edição.
+  const activeProviderLabel = !config
+    ? "Nenhuma conexão configurada"
+    : config.provider === "meta"
+      ? "Cloud API · Datafy"
+      : `QR code · ${PROVIDER_LABEL[config.provider] ?? config.provider}`;
+  const headerOnline = config?.provider === "meta" ? !!config.active : connected;
+
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-4xl">
       <PageHeader
         icon={SettingsIcon}
         title="Configurações"
-        description="Conexão do WhatsApp e integrações da empresa"
+        description="Conexão do WhatsApp, integrações e preferências da empresa"
       />
 
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Como o WhatsApp conecta</CardTitle>
-          <CardDescription>
-            Ler o QR code conecta qualquer número em segundos. A Cloud API exige conta aprovada na Meta,
-            mas é a única que envia template fora da janela de 24h.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {([
-              ["uazapi", "QR code · UAZAPI", "Serviço hospedado"],
-              ["meta", "Cloud API · Datafy", "Credenciais da Meta"],
-            ] as const).map(([value, title, hint]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setProvider(value)}
-                className={`rounded-lg border p-3 text-left transition-colors ${
-                  provider === value
-                    ? "border-primary bg-primary/5 ring-1 ring-primary"
-                    : "hover:bg-accent/50"
-                }`}
-              >
-                <span className="block text-sm font-medium">{title}</span>
-                <span className="block text-xs text-muted-foreground">{hint}</span>
-              </button>
-            ))}
-          </div>
-          {config && config.provider !== provider && (
-            <p className="mt-3 rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
-              Esta empresa está usando{" "}
-              <span className="font-medium text-foreground">
-                {config.provider === "meta"
-                  ? "Cloud API"
-                  : `QR code · ${PROVIDER_LABEL[config.provider] ?? config.provider}`}
-              </span>
-              . A troca só vale depois de conectar/salvar abaixo, e o histórico de conversas continua o mesmo.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      <Tabs value={tab} onValueChange={changeTab}>
+        <TabsList className="mb-4 h-auto flex-wrap justify-start">
+          <TabsTrigger value="whatsapp">
+            <WhatsappLogo />
+            WhatsApp
+          </TabsTrigger>
+          <TabsTrigger value="integracoes">
+            <Plug />
+            Integrações
+          </TabsTrigger>
+          <TabsTrigger value="notificacoes">
+            <Bell />
+            Notificações
+          </TabsTrigger>
+          <TabsTrigger value="conta">
+            <UserRound />
+            Conta e plano
+          </TabsTrigger>
+        </TabsList>
 
-      {provider !== "meta" ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex flex-wrap items-center gap-2">
-              Conexão por QR code
-              {connected && (
-                <Badge variant="success">
-                  <CheckCircle />
-                  Conectado
+        {/* ── WhatsApp ─────────────────────────────────────────────────── */}
+        <TabsContent value="whatsapp" className="space-y-6">
+          <Card className="overflow-hidden">
+            <div className="flex flex-wrap items-center gap-4 border-b bg-gradient-to-r from-[#25D366]/10 via-[#25D366]/[0.03] to-transparent p-5">
+              <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-card shadow-sm ring-1 ring-[#25D366]/25">
+                <WhatsappLogo className="h-8 w-8" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-lg font-semibold tracking-tight">WhatsApp</h2>
+                <p className="text-sm text-muted-foreground">{activeProviderLabel}</p>
+              </div>
+              {config && (
+                <Badge variant={headerOnline ? "success" : "outline"}>
+                  <span
+                    className={cn(
+                      "h-1.5 w-1.5 rounded-full",
+                      headerOnline ? "bg-success" : "bg-muted-foreground/60",
+                    )}
+                  />
+                  {headerOnline ? "Online" : "Offline"}
                 </Badge>
               )}
-            </CardTitle>
-            <CardDescription>
-              No celular: WhatsApp → Aparelhos conectados → Conectar um aparelho. O código se renova
-              sozinho enquanto esta tela estiver aberta — não precisa ter pressa.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {qrSrc && (
-              <div className="flex flex-col items-center gap-3 rounded-lg border bg-card p-4">
-                <img src={qrSrc} alt="QR code para conectar o WhatsApp" className="h-56 w-56" />
-                <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Aguardando leitura — o código se renova sozinho
-                </p>
-              </div>
-            )}
-
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">Status:</span>
-              <span className="font-medium">{STATE_LABEL[instanceState]}</span>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={() => void handleConnect()} disabled={connecting}>
-                {connecting ? <Loader2 className="animate-spin" /> : <QrCode />}
-                {connected ? "Gerar novo QR" : qr ? "Gerar outro QR" : "Conectar número"}
-              </Button>
-              <Button variant="outline" onClick={() => void checkInstanceStatus()} disabled={statusLoading}>
-                {statusLoading && <Loader2 className="animate-spin" />}
-                Verificar status
-              </Button>
-              {config?.provider === provider && (
-                <Button variant="outline" onClick={() => void handleDisconnect()} disabled={connecting}>
-                  <Unplug />
-                  Desconectar
-                </Button>
-              )}
-            </div>
-
-            {provider === "uazapi" && config?.provider === "uazapi" && (
-              <div className="space-y-2 rounded-lg border p-3">
-                <p className="text-sm font-medium">Histórico do WhatsApp</p>
+            <CardContent className="space-y-3 p-5">
+              <div>
+                <p className="text-sm font-medium">Modo de conexão</p>
                 <p className="text-xs text-muted-foreground">
-                  Traz as conversas que já existiam no aparelho: cada número vira contato e as
-                  mensagens entram no Chat com a data original. Grupos ficam de fora, e mídia antiga
-                  entra como rótulo — o arquivo só vem no que chegar daqui para frente.
+                  Ler o QR code conecta qualquer número em segundos. A Cloud API exige conta aprovada na
+                  Meta, mas é a única que envia template fora da janela de 24h.
                 </p>
-                <Button variant="outline" onClick={() => void importHistory()} disabled={importing}>
-                  {importing ? <Loader2 className="animate-spin" /> : <History />}
-                  {importing ? "Importando..." : "Importar histórico"}
-                </Button>
-                {imported && (
-                  <p className="text-xs text-muted-foreground">
-                    {imported.done} de {imported.total} conversas · {imported.messages} mensagens ·{" "}
-                    {imported.contacts} contatos novos
-                  </p>
-                )}
               </div>
-            )}
+              <div className="grid gap-3 sm:grid-cols-2">
+                {([
+                  ["uazapi", QrCode, "QR code · UAZAPI", "Conecta pelo celular, sem burocracia", "Recomendado"],
+                  ["meta", ShieldCheck, "Cloud API · Datafy", "API oficial com credenciais da Meta", null],
+                ] as const).map(([value, Icon, title, hint, tag]) => {
+                  const selected = provider === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setProvider(value)}
+                      aria-pressed={selected}
+                      className={cn(
+                        "relative flex items-start gap-3 rounded-xl border p-4 text-left transition-all",
+                        selected
+                          ? "border-primary bg-primary/5 ring-1 ring-primary"
+                          : "hover:border-foreground/20 hover:bg-accent/40",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                          selected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
+                          {title}
+                          {tag && (
+                            <span className="rounded-full bg-success/10 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-success">
+                              {tag}
+                            </span>
+                          )}
+                        </span>
+                        <span className="mt-0.5 block text-xs text-muted-foreground">{hint}</span>
+                      </span>
+                      {selected && <CheckCircle className="h-4 w-4 shrink-0 text-primary" />}
+                    </button>
+                  );
+                })}
+              </div>
+              {config && config.provider !== provider && (
+                <p className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-xs text-muted-foreground">
+                  Esta empresa está usando{" "}
+                  <span className="font-medium text-foreground">{activeProviderLabel}</span>. A troca só
+                  vale depois de conectar/salvar abaixo, e o histórico de conversas continua o mesmo.
+                </p>
+              )}
+            </CardContent>
+          </Card>
 
-            <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
-              O webhook é apontado sozinho na criação — não precisa configurar nada no painel do provedor.
-              Campanhas nesse modo saem como texto livre: template aprovado só existe na Cloud API.
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-      <>
-      <AutomationTemplatesCard />
-
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>URL do Webhook</CardTitle>
-          <CardDescription>
-            Cole esta URL (e o Verify Token abaixo) na configuração de webhook do seu número no painel do
-            Datafy. Todas as mensagens recebidas passarão a aparecer no Chat.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex gap-2">
-            <Input readOnly value={webhookUrl} className="font-mono text-xs" />
-            <Button
-              size="icon"
-              variant="outline"
-              aria-label="Copiar URL do webhook"
-              onClick={() => copyToClipboard(webhookUrl)}
-            >
-              <Copy />
-            </Button>
-          </div>
-          <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
-            Marque os campos <span className="font-mono text-foreground">messages</span> e{" "}
-            <span className="font-mono text-foreground">message_echoes</span> na assinatura do webhook.
-            Sem o <span className="font-mono text-foreground">message_echoes</span>, o que a sua equipe
-            responde pelo celular não aparece aqui no Chat — só o lado do cliente.
-          </p>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex flex-wrap items-center gap-2">
-            Conexão WhatsApp (Datafy)
-            {config?.active && (
-              <Badge variant="success">
-                <CheckCircle />
-                Configurado
-              </Badge>
-            )}
-          </CardTitle>
-          <CardDescription>
-            Pegue estas credenciais no painel do Datafy após conectar seu número.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {isPending ? (
-            <SkeletonForm fields={4} />
-          ) : (
+          {provider !== "meta" ? (
             <>
-              <div className="space-y-1.5">
-                <Label>Nome de exibição (opcional)</Label>
-                <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Ex: Loja Centro" />
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label>Phone Number ID</Label>
-                  <Input value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>WABA ID</Label>
-                  <Input value={wabaId} onChange={(e) => setWabaId(e.target.value)} />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Access Token</Label>
-                <PasswordInput
-                  autoComplete="new-password"
-                  value={accessToken}
-                  onChange={(e) => setAccessToken(e.target.value)}
-                  placeholder={config?.has_access_token ? "•••••••• (token salvo; deixe em branco para manter)" : "sk_live_..."}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Verify Token (webhook)</Label>
-                <div className="flex gap-2">
-                  <Input readOnly value={verifyToken} className="font-mono text-xs" />
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    aria-label="Copiar verify token"
-                    onClick={() => copyToClipboard(verifyToken)}
-                  >
-                    <Copy />
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Cole este valor no campo "verify token" do webhook no painel do Datafy.
-                </p>
-              </div>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex flex-wrap items-center gap-2">
+                    <Smartphone className="h-4 w-4 text-muted-foreground" />
+                    Conexão por QR code
+                  </CardTitle>
+                  <CardDescription>
+                    O código se renova sozinho enquanto esta tela estiver aberta — não precisa ter pressa.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="grid gap-6 md:grid-cols-[1fr_auto] md:items-center">
+                    <ol className="space-y-3">
+                      {[
+                        "Abra o WhatsApp no celular da empresa",
+                        "Toque em Aparelhos conectados → Conectar um aparelho",
+                        "Aponte a câmera para o código ao lado",
+                      ].map((step, i) => (
+                        <li key={step} className="flex items-start gap-3 text-sm">
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                            {i + 1}
+                          </span>
+                          <span className="pt-0.5">{step}</span>
+                        </li>
+                      ))}
+                    </ol>
 
-              <div className="flex flex-wrap gap-2">
-                <Button onClick={handleSave} disabled={saveConfig.isPending}>
-                  {saveConfig.isPending ? "Salvando..." : "Salvar configuração"}
-                </Button>
-                {config && (
-                  <Button variant="outline" onClick={() => void checkStatus()} disabled={statusLoading}>
-                    {statusLoading && <Loader2 className="animate-spin" />}
-                    Verificar status
-                  </Button>
-                )}
-                {config && (
-                  <Button variant="outline" onClick={() => void syncHistory()} disabled={syncing}>
-                    {syncing ? <Loader2 className="animate-spin" /> : <History />}
-                    Sincronizar histórico
-                  </Button>
-                )}
-              </div>
-
-              {config && (
-                <p className="text-xs text-muted-foreground">
-                  Use "Sincronizar histórico" depois de conectar o número para importar as conversas e
-                  contatos que já existiam no WhatsApp. É uma ação única por conexão e pode levar alguns
-                  minutos para tudo aparecer no Chat.
-                </p>
-              )}
-
-              {status && (
-                <dl className="grid gap-x-4 gap-y-2 rounded-lg border bg-muted/40 p-4 text-sm sm:grid-cols-2">
-                  {[
-                    ["Número", status.display_phone_number],
-                    ["Nome verificado", status.verified_name],
-                    ["Qualidade", status.quality_rating],
-                    ["Status", status.status],
-                  ].map(([label, value]) => (
-                    <div key={label}>
-                      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
-                      <dd className="mt-0.5 font-medium">{value ?? "—"}</dd>
+                    <div className="flex h-60 w-full items-center justify-center rounded-xl border bg-card md:w-60">
+                      {qrSrc ? (
+                        <img src={qrSrc} alt="QR code para conectar o WhatsApp" className="h-52 w-52" />
+                      ) : connected ? (
+                        <div className="flex flex-col items-center gap-2 text-center">
+                          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#25D366]/10">
+                            <WhatsappLogo className="h-8 w-8" />
+                          </span>
+                          <p className="text-sm font-medium">Número conectado</p>
+                          <p className="px-4 text-xs text-muted-foreground">Mensagens entrando no Chat</p>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-2 px-6 text-center text-muted-foreground">
+                          <QrCode className="h-10 w-10 opacity-40" />
+                          <p className="text-xs">Clique em Conectar número para gerar o código</p>
+                        </div>
+                      )}
                     </div>
-                  ))}
-                </dl>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span
+                        className={cn(
+                          "h-2 w-2 rounded-full",
+                          connected
+                            ? "bg-success"
+                            : instanceState === "connecting"
+                              ? "animate-pulse bg-warning"
+                              : "bg-muted-foreground/50",
+                        )}
+                      />
+                      <span className="font-medium">{STATE_LABEL[instanceState]}</span>
+                      {qr && (
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          aguardando leitura
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void checkInstanceStatus()}
+                        disabled={statusLoading}
+                      >
+                        {statusLoading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                        Verificar
+                      </Button>
+                      {config?.provider === provider && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void handleDisconnect()}
+                          disabled={connecting}
+                        >
+                          <Unplug />
+                          Desconectar
+                        </Button>
+                      )}
+                      <Button size="sm" onClick={() => void handleConnect()} disabled={connecting}>
+                        {connecting ? <Loader2 className="animate-spin" /> : <QrCode />}
+                        {connected ? "Gerar novo QR" : qr ? "Gerar outro QR" : "Conectar número"}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground">
+                    O webhook é apontado sozinho na criação — não precisa configurar nada no painel do
+                    provedor. Campanhas nesse modo saem como texto livre: template aprovado só existe na
+                    Cloud API.
+                  </p>
+                </CardContent>
+              </Card>
+
+              {provider === "uazapi" && config?.provider === "uazapi" && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex flex-wrap items-center gap-2">
+                      <History className="h-4 w-4 text-muted-foreground" />
+                      Histórico do WhatsApp
+                    </CardTitle>
+                    <CardDescription>
+                      Traz as conversas que já existiam no aparelho: cada número vira contato e as
+                      mensagens entram no Chat com a data original. Grupos ficam de fora, e mídia antiga
+                      entra como rótulo — o arquivo só vem no que chegar daqui para frente.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-wrap items-center gap-3">
+                    <Button variant="outline" onClick={() => void importHistory()} disabled={importing}>
+                      {importing ? <Loader2 className="animate-spin" /> : <History />}
+                      {importing ? "Importando..." : "Importar histórico"}
+                    </Button>
+                    {imported && (
+                      <p className="text-xs text-muted-foreground">
+                        {imported.done} de {imported.total} conversas · {imported.messages} mensagens ·{" "}
+                        {imported.contacts} contatos novos
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
               )}
             </>
-          )}
-        </CardContent>
-      </Card>
-      </>
-      )}
-
-      {/* Consumo do mês. Só aparece com cota definida: para quem é ilimitado,
-          um número sem teto ao lado não informa nada. */}
-      {usage?.monthly_coins != null && (
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="flex flex-wrap items-center gap-2">
-              <Gauge className="h-4 w-4 text-muted-foreground" />
-              Envios do mês
-            </CardTitle>
-            <CardDescription>
-              Cada mensagem enviada — pelo Chat, por campanha ou pela IA — consome da cota mensal.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-end justify-between gap-3">
-              <p className="tabular text-2xl font-bold leading-none">
-                {Number(usage.used).toLocaleString("pt-BR")}
-                <span className="text-sm font-normal text-muted-foreground">
-                  {" "}de {usage.monthly_coins.toLocaleString("pt-BR")}
-                </span>
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {Number(usage.remaining ?? 0) > 0
-                  ? `${Number(usage.remaining).toLocaleString("pt-BR")} restantes`
-                  : usage.allow_overage
-                    ? "Cota excedida — o excedente entra na próxima fatura"
-                    : "Cota esgotada — os envios estão bloqueados"}
-              </p>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-muted">
-              <div
-                className={cn(
-                  "h-full rounded-full transition-all",
-                  Number(usage.used) >= usage.monthly_coins ? "bg-destructive" : "bg-primary",
-                )}
-                style={{
-                  width: `${Math.min(100, (Number(usage.used) / Math.max(1, usage.monthly_coins)) * 100)}%`,
-                }}
-              />
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle className="flex flex-wrap items-center gap-2">
-            <Bell className="h-4 w-4 text-muted-foreground" />
-            Avisos de mensagem nova
-          </CardTitle>
-          <CardDescription>
-            Quando um cliente manda mensagem, o CRM toca um bip e conta as conversas novas no título
-            da aba — em qualquer tela, não só no Chat. A notificação do navegador aparece mesmo com a
-            aba em segundo plano.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                const next = !soundOn;
-                setAlertSoundEnabled(next);
-                setSoundOn(next);
-              }}
-            >
-              {soundOn ? <Volume2 /> : <VolumeX />}
-              {soundOn ? "Som ligado" : "Som desligado"}
-            </Button>
-
-            {permission === "granted" ? (
-              <Button variant="outline" disabled>
-                <CheckCircle />
-                Notificações ativadas
-              </Button>
-            ) : permission === "unsupported" ? (
-              <Button variant="outline" disabled>
-                <BellOff />
-                Sem suporte neste navegador
-              </Button>
-            ) : (
-              <Button variant="outline" onClick={() => void askNotifications()}>
-                <Bell />
-                Ativar notificações
-              </Button>
-            )}
-          </div>
-
-          {permission === "denied" && (
-            <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
-              O navegador está bloqueando as notificações deste site. No Chrome: cadeado ao lado do
-              endereço → Notificações → Permitir. O som e o contador no título continuam funcionando
-              mesmo bloqueado.
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle className="flex flex-wrap items-center gap-2">
-            <CalendarDays className="h-4 w-4 text-muted-foreground" />
-            Google Agenda
-            {googleConnected && !googleNeedsReconnect && (
-              <Badge variant="success">
-                <CheckCircle />
-                Conectado
-              </Badge>
-            )}
-            {googleNeedsReconnect && <Badge variant="outline">Reconectar</Badge>}
-          </CardTitle>
-          <CardDescription>
-            O que a equipe marca na Agenda aparece no Google Calendar da conta conectada, e o que for
-            marcado por lá entra aqui. Pedido do lead que o SDR IA registrou fica de fora enquanto
-            estiver "a confirmar" — só vai para o Google depois que alguém confirma.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {googlePending ? (
-            <div className="flex justify-center py-6">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
           ) : (
             <>
-              {googleConnected && (
-                <dl className="grid gap-x-4 gap-y-2 rounded-lg border bg-muted/40 p-4 text-sm sm:grid-cols-2">
-                  <div>
-                    <dt className="text-xs uppercase tracking-wide text-muted-foreground">Conta</dt>
-                    <dd className="mt-0.5 truncate font-medium">{googleStatus?.google_email ?? "—"}</dd>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex flex-wrap items-center gap-2">
+                    <KeyRound className="h-4 w-4 text-muted-foreground" />
+                    Credenciais da Cloud API (Datafy)
+                    {config?.active && (
+                      <Badge variant="success">
+                        <CheckCircle />
+                        Configurado
+                      </Badge>
+                    )}
+                  </CardTitle>
+                  <CardDescription>
+                    Pegue estas credenciais no painel do Datafy após conectar seu número.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {isPending ? (
+                    <SkeletonForm fields={4} />
+                  ) : (
+                    <>
+                      <div className="space-y-1.5">
+                        <Label>Nome de exibição (opcional)</Label>
+                        <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Ex: Loja Centro" />
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <Label>Phone Number ID</Label>
+                          <Input value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>WABA ID</Label>
+                          <Input value={wabaId} onChange={(e) => setWabaId(e.target.value)} />
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Access Token</Label>
+                        <PasswordInput
+                          autoComplete="new-password"
+                          value={accessToken}
+                          onChange={(e) => setAccessToken(e.target.value)}
+                          placeholder={config?.has_access_token ? "•••••••• (token salvo; deixe em branco para manter)" : "sk_live_..."}
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 border-t pt-4">
+                        <Button onClick={handleSave} disabled={saveConfig.isPending}>
+                          {saveConfig.isPending ? "Salvando..." : "Salvar configuração"}
+                        </Button>
+                        {config && (
+                          <Button variant="outline" onClick={() => void checkStatus()} disabled={statusLoading}>
+                            {statusLoading && <Loader2 className="animate-spin" />}
+                            Verificar status
+                          </Button>
+                        )}
+                        {config && (
+                          <Button variant="outline" onClick={() => void syncHistory()} disabled={syncing}>
+                            {syncing ? <Loader2 className="animate-spin" /> : <History />}
+                            Sincronizar histórico
+                          </Button>
+                        )}
+                      </div>
+
+                      {config && (
+                        <p className="text-xs text-muted-foreground">
+                          Use "Sincronizar histórico" depois de conectar o número para importar as conversas e
+                          contatos que já existiam no WhatsApp. É uma ação única por conexão e pode levar alguns
+                          minutos para tudo aparecer no Chat.
+                        </p>
+                      )}
+
+                      {status && (
+                        <dl className="grid gap-x-4 gap-y-2 rounded-lg border bg-muted/40 p-4 text-sm sm:grid-cols-2">
+                          {[
+                            ["Número", status.display_phone_number],
+                            ["Nome verificado", status.verified_name],
+                            ["Qualidade", status.quality_rating],
+                            ["Status", status.status],
+                          ].map(([label, value]) => (
+                            <div key={label}>
+                              <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
+                              <dd className="mt-0.5 font-medium">{value ?? "—"}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex flex-wrap items-center gap-2">
+                    <Link2 className="h-4 w-4 text-muted-foreground" />
+                    Webhook
+                  </CardTitle>
+                  <CardDescription>
+                    Cole a URL e o Verify Token na configuração de webhook do seu número no painel do
+                    Datafy. Todas as mensagens recebidas passarão a aparecer no Chat.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-1.5">
+                    <Label>URL do webhook</Label>
+                    <div className="flex gap-2">
+                      <Input readOnly value={webhookUrl} className="font-mono text-xs" />
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        aria-label="Copiar URL do webhook"
+                        onClick={() => copyToClipboard(webhookUrl)}
+                      >
+                        <Copy />
+                      </Button>
+                    </div>
                   </div>
-                  <div>
-                    <dt className="text-xs uppercase tracking-wide text-muted-foreground">
-                      Última sincronização
-                    </dt>
-                    <dd className="mt-0.5 font-medium">
-                      {googleStatus?.last_sync_at
-                        ? new Date(googleStatus.last_sync_at).toLocaleString("pt-BR")
-                        : "Ainda não sincronizou"}
-                    </dd>
+                  <div className="space-y-1.5">
+                    <Label>Verify Token</Label>
+                    <div className="flex gap-2">
+                      <Input readOnly value={verifyToken} className="font-mono text-xs" />
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        aria-label="Copiar verify token"
+                        onClick={() => copyToClipboard(verifyToken)}
+                      >
+                        <Copy />
+                      </Button>
+                    </div>
                   </div>
-                </dl>
-              )}
+                  <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
+                    Marque os campos <span className="font-mono text-foreground">messages</span> e{" "}
+                    <span className="font-mono text-foreground">message_echoes</span> na assinatura do webhook.
+                    Sem o <span className="font-mono text-foreground">message_echoes</span>, o que a sua equipe
+                    responde pelo celular não aparece aqui no Chat — só o lado do cliente.
+                  </p>
+                </CardContent>
+              </Card>
 
-              {googleNeedsReconnect && (
-                <p className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-xs text-muted-foreground">
-                  O Google recusou o acesso — normalmente porque a permissão foi removida na conta.
-                  Conecte de novo para voltar a sincronizar.
-                </p>
-              )}
-
-              {googleStatus?.last_error && !googleNeedsReconnect && (
-                <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
-                  Último erro: {googleStatus.last_error}
-                </p>
-              )}
-
-              <div className="flex flex-wrap gap-2">
-                <Button onClick={() => void handleConnectGoogle()} disabled={connectGoogle.isPending}>
-                  {connectGoogle.isPending ? <Loader2 className="animate-spin" /> : <CalendarDays />}
-                  {googleConnected ? "Conectar outra conta" : "Conectar Google Agenda"}
-                </Button>
-                {googleConnected && (
-                  <>
-                    <Button
-                      variant="outline"
-                      onClick={() => void handleSyncGoogle()}
-                      disabled={syncGoogle.isPending}
-                    >
-                      {syncGoogle.isPending ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-                      Sincronizar agora
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => void handleDisconnectGoogle()}
-                      disabled={disconnectGoogle.isPending}
-                    >
-                      <Unplug />
-                      Desconectar
-                    </Button>
-                  </>
-                )}
-              </div>
-
-              <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
-                A Agenda sincroniza sozinha ao ser aberta. Cancelar um compromisso aqui apaga o evento
-                lá; apagar o evento no Google marca o compromisso como cancelado aqui, sem sumir com o
-                histórico.
-              </p>
+              <AutomationTemplatesCard />
             </>
           )}
-        </CardContent>
-      </Card>
+        </TabsContent>
 
-      <ChangePasswordCard />
+        {/* ── Integrações ──────────────────────────────────────────────── */}
+        <TabsContent value="integracoes" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex flex-wrap items-center gap-2">
+                <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                Google Agenda
+                {googleConnected && !googleNeedsReconnect && (
+                  <Badge variant="success">
+                    <CheckCircle />
+                    Conectado
+                  </Badge>
+                )}
+                {googleNeedsReconnect && <Badge variant="warning">Reconectar</Badge>}
+              </CardTitle>
+              <CardDescription>
+                O que a equipe marca na Agenda aparece no Google Calendar da conta conectada, e o que for
+                marcado por lá entra aqui. Pedido do lead que o SDR IA registrou fica de fora enquanto
+                estiver "a confirmar" — só vai para o Google depois que alguém confirma.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {googlePending ? (
+                <div className="flex justify-center py-6">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <>
+                  {googleConnected && (
+                    <dl className="grid gap-x-4 gap-y-2 rounded-lg border bg-muted/40 p-4 text-sm sm:grid-cols-2">
+                      <div>
+                        <dt className="text-xs uppercase tracking-wide text-muted-foreground">Conta</dt>
+                        <dd className="mt-0.5 truncate font-medium">{googleStatus?.google_email ?? "—"}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Última sincronização
+                        </dt>
+                        <dd className="mt-0.5 font-medium">
+                          {googleStatus?.last_sync_at
+                            ? new Date(googleStatus.last_sync_at).toLocaleString("pt-BR")
+                            : "Ainda não sincronizou"}
+                        </dd>
+                      </div>
+                    </dl>
+                  )}
+
+                  {googleNeedsReconnect && (
+                    <p className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-xs text-muted-foreground">
+                      O Google recusou o acesso — normalmente porque a permissão foi removida na conta.
+                      Conecte de novo para voltar a sincronizar.
+                    </p>
+                  )}
+
+                  {googleStatus?.last_error && !googleNeedsReconnect && (
+                    <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
+                      Último erro: {googleStatus.last_error}
+                    </p>
+                  )}
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={() => void handleConnectGoogle()} disabled={connectGoogle.isPending}>
+                      {connectGoogle.isPending ? <Loader2 className="animate-spin" /> : <CalendarDays />}
+                      {googleConnected ? "Conectar outra conta" : "Conectar Google Agenda"}
+                    </Button>
+                    {googleConnected && (
+                      <>
+                        <Button
+                          variant="outline"
+                          onClick={() => void handleSyncGoogle()}
+                          disabled={syncGoogle.isPending}
+                        >
+                          {syncGoogle.isPending ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                          Sincronizar agora
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => void handleDisconnectGoogle()}
+                          disabled={disconnectGoogle.isPending}
+                        >
+                          <Unplug />
+                          Desconectar
+                        </Button>
+                      </>
+                    )}
+                  </div>
+
+                  <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
+                    A Agenda sincroniza sozinha ao ser aberta. Cancelar um compromisso aqui apaga o evento
+                    lá; apagar o evento no Google marca o compromisso como cancelado aqui, sem sumir com o
+                    histórico.
+                  </p>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Notificações ─────────────────────────────────────────────── */}
+        <TabsContent value="notificacoes" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex flex-wrap items-center gap-2">
+                <Bell className="h-4 w-4 text-muted-foreground" />
+                Avisos de mensagem nova
+              </CardTitle>
+              <CardDescription>
+                Quando um cliente manda mensagem, o CRM toca um bip e conta as conversas novas no título
+                da aba — em qualquer tela, não só no Chat. A notificação do navegador aparece mesmo com a
+                aba em segundo plano.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="divide-y rounded-lg border">
+                <div className="flex flex-wrap items-center justify-between gap-3 p-4">
+                  <div>
+                    <p className="text-sm font-medium">Som de alerta</p>
+                    <p className="text-xs text-muted-foreground">Bip curto a cada conversa nova</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant={soundOn ? "secondary" : "outline"}
+                    onClick={() => {
+                      const next = !soundOn;
+                      setAlertSoundEnabled(next);
+                      setSoundOn(next);
+                    }}
+                  >
+                    {soundOn ? <Volume2 /> : <VolumeX />}
+                    {soundOn ? "Ligado" : "Desligado"}
+                  </Button>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3 p-4">
+                  <div>
+                    <p className="text-sm font-medium">Notificações do navegador</p>
+                    <p className="text-xs text-muted-foreground">Vale só para este dispositivo</p>
+                  </div>
+                  {permission === "granted" ? (
+                    <Badge variant="success">
+                      <CheckCircle />
+                      Ativadas
+                    </Badge>
+                  ) : permission === "unsupported" ? (
+                    <Badge variant="outline">
+                      <BellOff />
+                      Sem suporte neste navegador
+                    </Badge>
+                  ) : (
+                    <Button size="sm" variant="outline" onClick={() => void askNotifications()}>
+                      <Bell />
+                      Ativar
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {permission === "denied" && (
+                <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
+                  O navegador está bloqueando as notificações deste site. No Chrome: cadeado ao lado do
+                  endereço → Notificações → Permitir. O som e o contador no título continuam funcionando
+                  mesmo bloqueado.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Conta e plano ────────────────────────────────────────────── */}
+        <TabsContent value="conta" className="space-y-6">
+          {/* Consumo do mês. Só aparece com cota definida: para quem é ilimitado,
+              um número sem teto ao lado não informa nada. */}
+          {usage?.monthly_coins != null && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex flex-wrap items-center gap-2">
+                  <Gauge className="h-4 w-4 text-muted-foreground" />
+                  Envios do mês
+                </CardTitle>
+                <CardDescription>
+                  Cada mensagem enviada — pelo Chat, por campanha ou pela IA — consome da cota mensal.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-end justify-between gap-3">
+                  <p className="tabular text-2xl font-bold leading-none">
+                    {Number(usage.used).toLocaleString("pt-BR")}
+                    <span className="text-sm font-normal text-muted-foreground">
+                      {" "}de {usage.monthly_coins.toLocaleString("pt-BR")}
+                    </span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {Number(usage.remaining ?? 0) > 0
+                      ? `${Number(usage.remaining).toLocaleString("pt-BR")} restantes`
+                      : usage.allow_overage
+                        ? "Cota excedida — o excedente entra na próxima fatura"
+                        : "Cota esgotada — os envios estão bloqueados"}
+                  </p>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={cn(
+                      "h-full rounded-full transition-all",
+                      Number(usage.used) >= usage.monthly_coins ? "bg-destructive" : "bg-primary",
+                    )}
+                    style={{
+                      width: `${Math.min(100, (Number(usage.used) / Math.max(1, usage.monthly_coins)) * 100)}%`,
+                    }}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <ChangePasswordCard />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

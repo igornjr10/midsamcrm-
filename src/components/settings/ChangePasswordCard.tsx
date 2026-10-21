@@ -53,7 +53,7 @@ export default function ChangePasswordCard() {
   };
 
   return (
-    <Card className="mt-6">
+    <Card>
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center gap-2">
           <KeyRound className="h-4 w-4 text-muted-foreground" />

@@ -114,7 +114,7 @@ export default function AutomationTemplatesCard() {
   const faltando = purposes.filter((p) => !mapped?.get(p.id)).length;
 
   return (
-    <Card className="mb-6">
+    <Card>
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center gap-2">
           <MessageSquareWarning className="h-4 w-4 text-muted-foreground" />
